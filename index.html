@@ -228,7 +228,7 @@
             </div>
             <div class="flex items-center space-x-1.5">
               <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span id="live-feed-counter" class="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">12 notas</span>
+              <span id="live-feed-counter" class="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">0 notas</span>
             </div>
           </div>
 
@@ -243,6 +243,13 @@
             />
             <span class="absolute left-2.5 top-1.5 text-slate-400 text-xs">🔍</span>
             <button onclick="limpiarFeedQuickSearch()" class="absolute right-2.5 top-1.5 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
+          </div>
+
+          <!-- Estado de la actualización automática -->
+          <div class="flex items-center justify-between text-[10px] text-slate-500">
+            <span id="feed-update-status">⏳ Conectando con los medios...</span>
+            <button onclick="sincronizarNoticiasEnVivo(true)" id="btn-feed-refresh" class="text-blue-600 font-bold hover:underline">🔄 Actualizar ahora</button>
+          </div>
 
           <!-- Contenedor con Scroll Continuo para el Feed -->
           <div id="live-scroll-feed" class="max-h-[660px] overflow-y-auto space-y-3 pr-1.5 custom-scrollbar">
@@ -1307,6 +1314,9 @@
     let currentAccreditationMode = 'APPLICANT';
     let currentRequestsFilter = 'PENDING';
     let activeRegionFilter = 'ALL';
+    let currentQuickFeedQuery = '';
+    let feedLimit = 60;
+    let usingLiveNews = false;
     let currentMapZoom = 1;
 
     // Catálogo completo de las 56 Fuentes: 32 Medios y 24 Verificadores / ONGs
@@ -1846,12 +1856,10 @@
       if (tabId === 'analitica') filtrarEventosMultiFuente();
       if (tabId === 'desinformacion') filtrarFactChecks();
       if (tabId === 'medios') renderDirectorioMedios();
+      if (tabId === 'buscador') ejecutarBusquedaAvanzada();
       if (tabId === 'acceso') {
         renderizarSolicitudesAcreditacion();
         renderizarCodigosInvitacion();
-    ejecutarBusquedaAvanzada();
-    // Intento de rastreo en vivo inicial al abrir la página
-    setTimeout(buscarNoticiasInternetEnVivo, 1500);
       }
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1966,6 +1974,23 @@
     // ==========================================
     // FEED CONTINUO CON SCROLL Y APERTURA CURADA
     // ==========================================
+    // Escapa texto externo (RSS / web) antes de insertarlo en el HTML
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function safeUrl(url) {
+      return /^https?:\/\//i.test(url || '') ? esc(url) : '#';
+    }
+
+    function formatearHora(iso) {
+      const d = new Date(iso);
+      const sameDay = d.toDateString() === new Date().toDateString();
+      return sameDay
+        ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : d.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
     function renderLiveScrollFeed() {
       const container = document.getElementById('live-scroll-feed');
       const counterEl = document.getElementById('live-feed-counter');
@@ -1987,35 +2012,36 @@
       if (filtered.length === 0) {
         container.innerHTML = `
           <div class="text-center py-8 text-xs text-slate-400 bg-white rounded-xl border border-slate-200 p-4">
-            No se encontraron reportes en ${activeRegionFilter}.
+            No se encontraron reportes${activeRegionFilter !== 'ALL' ? ' en ' + esc(activeRegionFilter) : ''}${currentQuickFeedQuery ? ' para "' + esc(currentQuickFeedQuery) + '"' : ''}.
             <div class="mt-2">
-              <button onclick="limpiarFiltroRegionMapa()" class="text-blue-600 font-bold hover:underline">Ver todos los estados</button>
+              <button onclick="limpiarFiltroRegionMapa(); limpiarFeedQuickSearch();" class="text-blue-600 font-bold hover:underline">Ver todas las noticias</button>
             </div>
           </div>
         `;
+        renderCuratedHeadlines();
         return;
       }
 
       container.innerHTML = filtered.map(item => {
-        const timeAgo = new Date(item.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const url = safeUrl(item.sourceUrl);
         return `
           <article class="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs hover:border-slate-300 transition-all space-y-2">
             <div class="flex items-center justify-between text-[11px]">
               <div class="flex items-center space-x-1.5">
-                <span class="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded text-[10px]">${item.sourceName}</span>
-                <span class="text-slate-400">• ${timeAgo}</span>
+                <span class="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded text-[10px]">${esc(item.sourceName)}</span>
+                <span class="text-slate-400">• ${formatearHora(item.publishedAt)}</span>
               </div>
-              <span class="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">📍 ${item.region}</span>
+              <span class="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">📍 ${esc(item.region)}</span>
             </div>
 
             <h4 class="text-xs font-bold text-slate-900 leading-snug hover:text-blue-600 cursor-pointer">
-              <a href="${item.sourceUrl}" target="_blank">${item.title}</a>
+              <a href="${url}" target="_blank" rel="noopener">${esc(item.title)}</a>
             </h4>
-            <p class="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">${item.snippet}</p>
+            ${item.snippet ? `<p class="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">${esc(item.snippet)}</p>` : ''}
 
             <div class="flex items-center justify-between pt-1.5 border-t border-slate-50 text-[10px]">
-              <span class="text-slate-400 font-medium">${item.category}</span>
-              <a href="${item.sourceUrl}" target="_blank" class="text-blue-600 font-semibold hover:underline">
+              <span class="text-slate-400 font-medium">${esc(item.category)}${item.origin === 'web' ? ' • 🌐 Web' : ''}</span>
+              <a href="${url}" target="_blank" rel="noopener" class="text-blue-600 font-semibold hover:underline">
                 Ver fuente ↗
               </a>
             </div>
@@ -2030,47 +2056,74 @@
       const container = document.getElementById('homepage-curated-container');
       if (!container) return;
 
-      const main = feedNews[0];
-      const second = feedNews[1];
+      const pool = activeRegionFilter === 'ALL' ? feedNews : feedNews.filter(n => n.region === activeRegionFilter);
+      // Prioriza notas con resumen para la apertura
+      const main = pool.find(n => n.snippet) || pool[0];
+      const second = pool.find(n => n !== main);
+      if (!main) {
+        container.innerHTML = '<div class="bg-white rounded-xl border border-slate-200 p-5 text-xs text-slate-400 text-center">Sin noticias disponibles para esta selección.</div>';
+        return;
+      }
+
+      const autoBadge = main.origin
+        ? '<span class="text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded text-[11px]">📡 Recopilada automáticamente</span>'
+        : '<span class="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded text-[11px]">✓ Verificado</span>';
 
       container.innerHTML = `
         <article class="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
           <div class="flex items-center justify-between text-xs">
             <span class="font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded">
-              ⭐ APERTURA NACIONAL • ${main.category}
+              ⭐ APERTURA ${activeRegionFilter === 'ALL' ? 'NACIONAL' : 'REGIONAL'} • ${esc(main.category)}
             </span>
-            <span class="text-slate-500 font-bold">📍 ${main.region}</span>
+            <span class="text-slate-500 font-bold">📍 ${esc(main.region)}</span>
           </div>
           <h3 class="text-lg md:text-xl font-black text-slate-900 leading-snug">
-            <a href="${main.sourceUrl}" target="_blank" class="hover:text-blue-600">${main.title}</a>
+            <a href="${safeUrl(main.sourceUrl)}" target="_blank" rel="noopener" class="hover:text-blue-600">${esc(main.title)}</a>
           </h3>
-          <p class="text-xs text-slate-600 leading-relaxed">${main.snippet}</p>
+          <p class="text-xs text-slate-600 leading-relaxed">${esc(main.snippet)}</p>
           <div class="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
-            <span>Fuente verificada: <strong class="text-slate-700">${main.sourceName}</strong></span>
+            <span>Fuente: <strong class="text-slate-700">${esc(main.sourceName)}</strong> • ${formatearHora(main.publishedAt)}</span>
             <div class="flex items-center space-x-2">
-              <span class="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded text-[11px]">✓ Verificado</span>
-              <a href="${main.sourceUrl}" target="_blank" class="text-blue-600 hover:underline text-[11px] font-semibold">Leer investigación ↗</a>
+              ${autoBadge}
+              <a href="${safeUrl(main.sourceUrl)}" target="_blank" rel="noopener" class="text-blue-600 hover:underline text-[11px] font-semibold">Leer nota ↗</a>
             </div>
           </div>
         </article>
 
+        ${second ? `
         <article class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
           <div class="flex items-center justify-between text-xs">
-            <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">${second.category}</span>
-            <span class="text-slate-500 text-[11px] font-bold">📍 ${second.region}</span>
+            <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">${esc(second.category)}</span>
+            <span class="text-slate-500 text-[11px] font-bold">📍 ${esc(second.region)}</span>
           </div>
           <h4 class="text-sm font-bold text-slate-900 leading-snug">
-            <a href="${second.sourceUrl}" target="_blank" class="hover:text-blue-600">${second.title}</a>
+            <a href="${safeUrl(second.sourceUrl)}" target="_blank" rel="noopener" class="hover:text-blue-600">${esc(second.title)}</a>
           </h4>
           <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-            <span>Medio: ${second.sourceName}</span>
-            <a href="${second.sourceUrl}" target="_blank" class="text-blue-600 font-semibold hover:underline">Ver detalle ↗</a>
+            <span>Medio: ${esc(second.sourceName)}</span>
+            <a href="${safeUrl(second.sourceUrl)}" target="_blank" rel="noopener" class="text-blue-600 font-semibold hover:underline">Ver detalle ↗</a>
           </div>
-        </article>
+        </article>` : ''}
       `;
     }
 
+    function filtrarFeedEnPortada(value) {
+      currentQuickFeedQuery = (value || '').toLowerCase().trim();
+      renderLiveScrollFeed();
+    }
+
+    function limpiarFeedQuickSearch() {
+      const input = document.getElementById('feed-quick-search-input');
+      if (input) input.value = '';
+      filtrarFeedEnPortada('');
+    }
+
     function cargarMasNoticias() {
+      if (usingLiveNews) {
+        feedLimit = Math.min(feedLimit + 40, 200);
+        sincronizarNoticiasEnVivo();
+        return;
+      }
       const extraNews = [
         {
           id: 'fn_' + Date.now() + '_1',
@@ -2768,34 +2821,181 @@ El usuario ha sido promovido al rol 'VERIFIED' y ya tiene acceso completo a la b
     });
 
 
-    // Sincronización automática de noticias remotas desde /data/news.json o feeds RSS
-    async function sincronizarNoticiasEnVivo() {
-      const bannerStatus = document.getElementById('live-feed-counter');
+    // ==========================================
+    // ACTUALIZACIÓN AUTOMÁTICA DESDE LOS MEDIOS (/api/news)
+    // ==========================================
+    async function sincronizarNoticiasEnVivo(forzar = false) {
+      const statusEl = document.getElementById('feed-update-status');
+      const btn = document.getElementById('btn-feed-refresh');
+      if (forzar && statusEl) statusEl.innerText = '🔄 Consultando los medios...';
+      if (btn) btn.disabled = true;
       try {
-        const res = await fetch('/data/news.json', { cache: 'no-store' });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && Array.isArray(data.news) && data.news.length > 0) {
-            let nuevos = 0;
-            data.news.forEach(item => {
-              if (!feedNews.some(existing => existing.title === item.title || existing.sourceUrl === item.sourceUrl)) {
-                feedNews.unshift(item);
-                nuevos++;
-              }
-            });
-            if (nuevos > 0) {
-              renderLiveScrollFeed();
-              console.log(`[VzlaMonitoreo] Se incorporaron ${nuevos} noticias frescas desde el servidor.`);
-            }
+        const res = await fetch(`/api/news?limit=${feedLimit}${forzar ? '&refresh=1' : ''}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (Array.isArray(data.news) && data.news.length > 0) {
+          const nuevos = usingLiveNews ? data.news.filter(n => !feedNews.some(e => e.sourceUrl === n.sourceUrl)).length : data.news.length;
+          feedNews = data.news;
+          usingLiveNews = true;
+          renderLiveScrollFeed();
+          if (activeRegionFilter !== 'ALL') {
+            const filterCount = document.getElementById('active-region-count');
+            if (filterCount) filterCount.innerText = `(${feedNews.filter(n => n.region === activeRegionFilter).length} reportes encontrados)`;
           }
+          if (nuevos > 0) console.log(`[VzlaMonitoreo] ${nuevos} noticias nuevas desde los medios.`);
+        }
+        if (statusEl) {
+          const hora = data.lastRefresh ? new Date(data.lastRefresh).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+          const extra = data.refreshed ? ` • ${data.refreshed.added} nuevas de ${data.refreshed.sources} medios` : '';
+          statusEl.innerText = `🟢 Actualizado ${hora}${extra}`;
         }
       } catch (err) {
-        // En modo local o sin archivo estático, opera con la base en memoria y caché
+        if (statusEl) statusEl.innerText = usingLiveNews ? '⚠️ Sin conexión con el servidor, reintentando...' : '⚠️ Mostrando noticias de respaldo (servidor no disponible)';
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
-    // Comprobar noticias remotas cada 2 minutos automáticamente
+    // Comprobar noticias nuevas cada 2 minutos automáticamente
     setInterval(sincronizarNoticiasEnVivo, 120000);
+
+    // ==========================================
+    // MOTOR DE BÚSQUEDA (índice local + búsqueda en Internet)
+    // ==========================================
+    let webSearchResults = null;
+    let webSearchQuery = null;
+    let webSearchTimer = null;
+
+    function normalizarTexto(t) {
+      return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+
+    function obtenerFiltrosBusqueda() {
+      return {
+        q: (document.getElementById('search-input')?.value || '').trim(),
+        region: document.getElementById('filter-region')?.value || 'ALL',
+        category: document.getElementById('filter-category')?.value || 'ALL',
+        source: document.getElementById('filter-source')?.value || 'ALL',
+      };
+    }
+
+    function ejecutarBusquedaAvanzada() {
+      const f = obtenerFiltrosBusqueda();
+      const resultsContainer = document.getElementById('search-results');
+      const countEl = document.getElementById('search-feedback-count');
+      if (!resultsContainer) return;
+
+      // Base: noticias del feed + resultados de la última búsqueda web
+      const pool = [...feedNews];
+      (webSearchResults || []).forEach(n => { if (!pool.some(e => e.sourceUrl === n.sourceUrl)) pool.push(n); });
+
+      const terms = normalizarTexto(f.q).split(/\s+/).filter(Boolean);
+      const filtered = pool.filter(n => {
+        if (f.region !== 'ALL' && n.region !== f.region) return false;
+        if (f.category !== 'ALL' && n.category !== f.category) return false;
+        if (f.source !== 'ALL' && !normalizarTexto(n.sourceName).includes(normalizarTexto(f.source))) return false;
+        if (terms.length) {
+          const text = normalizarTexto(n.title + ' ' + (n.snippet || '') + ' ' + n.sourceName + ' ' + n.region);
+          // Los resultados web ya coinciden con la consulta según el buscador
+          if (!(n.origin === 'web' && webSearchQuery === f.q) && !terms.every(t => text.includes(t))) return false;
+        }
+        return true;
+      }).sort((a, b) => String(b.publishedAt).localeCompare(String(a.publishedAt)));
+
+      if (countEl) {
+        countEl.innerText = `Mostrando ${filtered.length} noticias` + (webSearchResults ? ' (índice + búsqueda en Internet)' : ' indexadas');
+      }
+
+      if (filtered.length === 0) {
+        resultsContainer.innerHTML = `
+          <div class="bg-white rounded-xl border border-slate-200 p-6 text-center text-xs text-slate-500 space-y-2">
+            <p>No hay coincidencias en el índice${f.q ? ' para "<strong>' + esc(f.q) + '</strong>"' : ''}.</p>
+            <button onclick="buscarNoticiasInternetEnVivo()" class="text-blue-600 font-bold hover:underline">🌐 Buscar en Internet</button>
+          </div>`;
+        return;
+      }
+
+      resultsContainer.innerHTML = filtered.map(item => {
+        const url = safeUrl(item.sourceUrl);
+        return `
+        <article class="bg-white rounded-xl border border-slate-200 p-3.5 space-y-1.5 shadow-xs hover:border-slate-300 transition-all">
+          <div class="flex justify-between gap-2 text-[11px] text-slate-400">
+            <span class="font-bold text-slate-700">${esc(item.sourceName)} <span class="font-normal text-slate-400">• ${formatearHora(item.publishedAt)}</span></span>
+            <span class="shrink-0">${item.origin === 'web' ? '🌐 ' : ''}📍 ${esc(item.region)} • ${esc(item.category)}</span>
+          </div>
+          <h4 class="text-sm font-bold text-slate-900 leading-snug"><a href="${url}" target="_blank" rel="noopener" class="hover:text-blue-600">${esc(item.title)}</a></h4>
+          ${item.snippet ? `<p class="text-[11px] text-slate-600 line-clamp-2">${esc(item.snippet)}</p>` : ''}
+          <a href="${url}" target="_blank" rel="noopener" class="inline-block text-[11px] text-blue-600 font-semibold hover:underline">Ver fuente ↗</a>
+        </article>`;
+      }).join('');
+
+      // Si el usuario escribe una consulta nueva, buscar también en Internet tras una pausa
+      clearTimeout(webSearchTimer);
+      if (f.q.length >= 3 && f.q !== webSearchQuery) {
+        webSearchTimer = setTimeout(buscarNoticiasInternetEnVivo, 900);
+      }
+    }
+
+    async function buscarNoticiasInternetEnVivo() {
+      clearTimeout(webSearchTimer);
+      const f = obtenerFiltrosBusqueda();
+      const banner = document.getElementById('live-scraping-banner');
+      const btn = document.getElementById('btn-rastreo-internet');
+      const icon = document.getElementById('rastreo-icon');
+      const text = document.getElementById('rastreo-text');
+
+      if (btn) btn.disabled = true;
+      if (icon) icon.classList.add('animate-spin');
+      if (text) text.innerText = 'Buscando en Internet...';
+      if (banner) {
+        banner.className = 'text-xs p-3 rounded-xl font-medium transition-all bg-blue-50 border border-blue-200 text-blue-800';
+        banner.innerText = `🌐 Rastreando medios en Internet${f.q ? ' sobre "' + f.q + '"' : ''}...`;
+      }
+
+      try {
+        const params = new URLSearchParams(f);
+        const res = await fetch('/api/search?' + params.toString(), { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        webSearchResults = (data.results || []).map(n => ({ ...n, origin: n.origin === 'web' ? 'web' : n.origin }));
+        webSearchQuery = f.q;
+        if (banner) {
+          banner.className = 'text-xs p-3 rounded-xl font-medium transition-all ' + (data.webError ? 'bg-amber-50 border border-amber-200 text-amber-800' : 'bg-emerald-50 border border-emerald-200 text-emerald-800');
+          banner.innerText = data.webError
+            ? `⚠️ ${data.webError}. Mostrando ${webSearchResults.length} resultados del índice.`
+            : `✅ ${data.webFound} noticias encontradas en Internet y ${webSearchResults.length} resultados en total. Las nuevas se guardaron en el índice.`;
+        }
+      } catch (err) {
+        if (banner) {
+          banner.className = 'text-xs p-3 rounded-xl font-medium transition-all bg-red-50 border border-red-200 text-red-800';
+          banner.innerText = '❌ No se pudo completar la búsqueda en Internet. Revisa tu conexión e inténtalo de nuevo.';
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+        if (icon) icon.classList.remove('animate-spin');
+        if (text) text.innerText = 'Buscar Noticias en Internet';
+        webSearchQuery = f.q;
+        ejecutarBusquedaAvanzada();
+      }
+    }
+
+    function limpiarBusquedaInput() {
+      const input = document.getElementById('search-input');
+      if (input) input.value = '';
+      ejecutarBusquedaAvanzada();
+    }
+
+    function limpiarTodosLosFiltrosBusqueda() {
+      ['filter-region', 'filter-category', 'filter-source'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = 'ALL';
+      });
+      webSearchResults = null;
+      webSearchQuery = null;
+      const banner = document.getElementById('live-scraping-banner');
+      if (banner) banner.className = 'hidden';
+      limpiarBusquedaInput();
+    }
 
     // Inicializar
     sincronizarNoticiasEnVivo();
