@@ -1,0 +1,2811 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VzlaMonitoreo - Observatorio de Hechos, DDHH, Mapa y Gestión Editorial</title>
+  
+  <!-- Configuración PWA Móvil -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#1e3a8a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VzlaMonitoreo">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .badge-verified { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .badge-registered { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .badge-public { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+    .verdict-falso { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+    .verdict-enganoso { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .verdict-manipulado { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+    .verdict-sinevidencia { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+
+    /* Estilo del Mapa SVG Interactivo Mejorado */
+    .map-state {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      fill: #1e293b;
+      stroke: #334155;
+      stroke-width: 1.5;
+      stroke-linejoin: round;
+    }
+    .map-state:hover {
+      fill: #2563eb;
+      stroke: #60a5fa;
+      stroke-width: 2;
+      filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+    }
+    .map-state.active {
+      fill: #1d4ed8;
+      stroke: #93c5fd;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 12px rgba(96, 165, 250, 0.8));
+    }
+    .map-lake {
+      fill: #0284c7;
+      stroke: #0369a1;
+      stroke-width: 1;
+      opacity: 0.85;
+    }
+    .map-river {
+      stroke: #38bdf8;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      opacity: 0.7;
+    }
+    .map-pin {
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .map-pin:hover {
+      transform: scale(1.2);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen pb-20 md:pb-8">
+
+  <!-- Banner de Estado de Conexión (Offline ante Apagones / Caídas) -->
+  <div id="network-banner" class="hidden bg-amber-600 text-white text-[11px] font-semibold py-1.5 px-4 text-center sticky top-0 z-50 shadow-md">
+    <span>⚠️ Sin conexión a internet — Operando en Modo Caché Local (Resiliencia ante apagones)</span>
+  </div>
+
+  <!-- Barra Superior -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <span class="text-xl">🇻🇪</span>
+        <div>
+          <h1 class="text-base font-black tracking-tight text-slate-900 leading-none">VzlaMonitoreo</h1>
+          <span class="text-[10px] text-slate-500 font-medium">Observatorio de Hechos • 56 Fuentes • Mapa Interactivo • Gestión Editorial</span>
+        </div>
+      </div>
+
+      <!-- Estado de Sesión Actual -->
+      <div class="flex items-center space-x-2">
+        <span id="user-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold badge-public">
+          Público (Anónimo)
+        </span>
+        <button onclick="toggleQuickRoleSwitcher()" class="text-xs text-slate-500 underline hover:text-slate-800 font-medium">
+          Cambiar Rol
+        </button>
+      </div>
+    </div>
+
+    <!-- Simulador Rápido de Roles para Pruebas -->
+    <div id="role-switcher" class="hidden bg-slate-900 text-white px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2 border-t border-slate-800">
+      <span class="font-medium text-slate-300">Simular Rol de Usuario en el Sistema:</span>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <button onclick="setRole('PUBLIC')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700">Público</button>
+        <button onclick="setRole('REGISTERED')" class="px-2.5 py-1 rounded bg-blue-900 hover:bg-blue-800">Registrado</button>
+        <button onclick="setRole('VERIFIED')" class="px-2.5 py-1 rounded bg-emerald-900 hover:bg-emerald-800">✓ Periodista Verificado</button>
+        <button onclick="setRole('ADMIN')" class="px-2.5 py-1 rounded bg-purple-900 hover:bg-purple-800 font-bold">★ Coordinador / Admin</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal -->
+  <main class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- Navegación por Pestañas (Desktop y Tablet) -->
+    <div class="hidden md:flex border-b border-slate-200 mb-6 space-x-2 overflow-x-auto pb-1 scrollbar-none">
+      <button onclick="showTab('portada')" id="tab-portada" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors bg-white shadow-sm text-blue-600 border border-slate-200 shrink-0">
+        📰 Portada y Feed en Vivo
+      </button>
+      <button onclick="showTab('mapa')" id="tab-mapa" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white flex items-center space-x-1.5 shrink-0">
+        <span>🗺️ Mapa de Venezuela</span>
+        <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">24 Estados</span>
+      </button>
+      <button onclick="showTab('analitica')" id="tab-analitica" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white flex items-center space-x-1.5 shrink-0">
+        <span>📊 Base de Datos & Multi-Fuente</span>
+        <span class="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">🔒 Acreditados</span>
+      </button>
+      <button onclick="showTab('desinformacion')" id="tab-desinformacion" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white flex items-center space-x-1.5 shrink-0">
+        <span>🛡️ Radar de Desinformación</span>
+        <span class="text-[10px] bg-red-100 text-red-800 font-bold px-1.5 py-0.5 rounded">Fact-Checking</span>
+      </button>
+      <button onclick="showTab('buscador')" id="tab-buscador" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white flex items-center space-x-1 shrink-0">
+        <span>🔍 Búsqueda FTS5</span>
+      </button>
+      <button onclick="showTab('medios')" id="tab-medios" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white shrink-0">
+        📡 Medios (56)
+      </button>
+      <button onclick="showTab('acceso')" id="tab-acceso" class="px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white flex items-center space-x-1.5 shrink-0">
+        <span>🎟️ Acreditaciones</span>
+        <span id="nav-pending-badge" class="text-[10px] bg-amber-500 text-white font-bold px-1.5 py-0.2 rounded-full">3</span>
+      </button>
+    </div>
+
+    <!-- PESTAÑA 1: Portada Curada + Feed Scrollable de Noticias -->
+    <section id="view-portada" class="space-y-6">
+      
+      <!-- Banner Hero Principal -->
+      <div class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div class="flex items-center space-x-2 text-xs font-semibold text-blue-300 uppercase tracking-wider">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Edición Jerarquizada • Monitoreo Continuo (15 min)</span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="text-[11px] bg-blue-800/80 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-700">
+              32 Medios • 24 Verificadores y ONGs
+            </span>
+          </div>
+        </div>
+        <h2 class="text-xl md:text-2xl font-black leading-tight">Observatorio de Hechos y Noticias de Venezuela</h2>
+        <p class="text-xs text-blue-100 mt-1 max-w-2xl leading-relaxed">
+          Noticias contrastadas por periodistas en terreno y feed continuo en tiempo real. Selecciona cualquier estado en el mapa interactivo para filtrar la cobertura regional.
+        </p>
+      </div>
+
+      <!-- Filtro Activo por Región (Si se hace clic en el mapa) -->
+      <div id="active-region-filter-bar" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between text-xs">
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-blue-900">📍 Filtrando por estado:</span>
+          <span id="active-region-name" class="font-black text-blue-700 bg-white px-2.5 py-0.5 rounded border border-blue-200">Zulia</span>
+          <span id="active-region-count" class="text-slate-500">(3 noticias encontradas)</span>
+        </div>
+        <button onclick="limpiarFiltroRegionMapa()" class="text-blue-600 hover:text-blue-800 font-bold hover:underline">
+          ✕ Ver todo el país
+        </button>
+      </div>
+
+      <!-- Grid Principal: Noticia de Apertura + Feed Continuo con Scroll -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Columna Izquierda: Apertura y Noticias Destacadas Curadas (7 columnas) -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center space-x-1.5">
+              <span>⭐</span>
+              <span>Apertura Jerarquizada por Periodistas</span>
+            </h3>
+            <span class="text-[11px] text-slate-400">Verificado humano</span>
+          </div>
+
+          <!-- Noticia Principal de Portada -->
+          <div id="homepage-curated-container" class="space-y-4">
+            <!-- Renderizado dinámico -->
+          </div>
+
+          <!-- Mini widget de acceso al mapa -->
+          <div class="bg-gradient-to-br from-slate-900 to-blue-950 text-white rounded-xl p-4 flex items-center justify-between border border-slate-800 shadow-sm">
+            <div class="space-y-1">
+              <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Geolocalización en Tiempo Real</span>
+              <h4 class="text-sm font-bold">Mapa Georreferenciado de Venezuela</h4>
+              <p class="text-xs text-slate-300">Explora focos de noticias en Zulia, Caracas, Táchira, Bolívar, Lara y más.</p>
+            </div>
+            <button onclick="showTab('mapa')" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-colors shrink-0">
+              Abrir Mapa 🗺️
+            </button>
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Feed Continuo de Noticias con Scroll (5 columnas) -->
+        <div class="lg:col-span-5 space-y-3">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700">Feed en Vivo (Scroll Continuo)</h3>
+            </div>
+            <div class="flex items-center space-x-1.5">
+              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span id="live-feed-counter" class="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">12 notas</span>
+            </div>
+          </div>
+
+          <!-- Buscador Rápido del Feed en Portada -->
+          <div class="relative">
+            <input
+              type="text"
+              id="feed-quick-search-input"
+              oninput="filtrarFeedEnPortada(this.value)"
+              placeholder="🔍 Filtrar noticias en este feed..."
+              class="w-full text-xs pl-8 pr-7 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 shadow-2xs"
+            />
+            <span class="absolute left-2.5 top-1.5 text-slate-400 text-xs">🔍</span>
+            <button onclick="limpiarFeedQuickSearch()" class="absolute right-2.5 top-1.5 text-slate-400 hover:text-slate-600 text-xs font-bold">✕</button>
+
+          <!-- Contenedor con Scroll Continuo para el Feed -->
+          <div id="live-scroll-feed" class="max-h-[660px] overflow-y-auto space-y-3 pr-1.5 custom-scrollbar">
+            <!-- Renderizado dinámico de noticias con scroll -->
+          </div>
+
+          <div class="pt-2 text-center">
+            <button onclick="cargarMasNoticias()" class="w-full py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-colors shadow-sm">
+              ⬇ Cargar más reportes
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- PESTAÑA 2: Mapa Interactivo de Venezuela Mejorado -->
+    <section id="view-mapa" class="hidden space-y-6">
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🗺️</span>
+              <h2 class="text-lg font-bold text-slate-900">Mapa Georreferenciado de Hechos y Noticias (24 Entidades)</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Selecciona cualquier estado o punto focal para ver su expediente regional, focos de conflicto y filtrar el feed.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="flex items-center space-x-1 text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+              <span>Servicios / Apagones</span>
+            </span>
+            <span class="flex items-center space-x-1 text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+              <span>Política / Institucional</span>
+            </span>
+            <span class="flex items-center space-x-1 text-slate-600 bg-slate-100 px-2 py-1 rounded">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <span>DDHH (Estatuto de Roma)</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Controles de Capas y Vista -->
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg">
+            <button onclick="filtrarCapaMapa('ALL')" id="layer-btn-all" class="px-2.5 py-1 rounded bg-white font-bold text-blue-600 shadow-xs">Todos los hechos</button>
+            <button onclick="filtrarCapaMapa('SERVICIOS')" id="layer-btn-servicios" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-900">Servicios Públicos</button>
+            <button onclick="filtrarCapaMapa('DDHH')" id="layer-btn-ddhh" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-900">Violaciones DDHH</button>
+          </div>
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-400 text-[11px]">Buscador rápido:</span>
+            <select id="state-select-dropdown" onchange="seleccionarRegionMapa(this.value)" class="text-xs px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg font-medium focus:outline-none">
+              <option value="ALL">Seleccionar Estado...</option>
+              <option value="Caracas">Caracas (Distrito Capital)</option>
+              <option value="Zulia">Zulia (Maracaibo)</option>
+              <option value="Táchira">Táchira (San Cristóbal)</option>
+              <option value="Bolívar">Bolívar (Guayana)</option>
+              <option value="Carabobo">Carabobo (Valencia)</option>
+              <option value="Lara">Lara (Barquisimeto)</option>
+              <option value="Miranda">Miranda (Los Teques)</option>
+              <option value="Aragua">Aragua (Maracay)</option>
+              <option value="Anzoátegui">Anzoátegui (Barcelona)</option>
+              <option value="Mérida">Mérida</option>
+              <option value="Falcón">Falcón (Coro)</option>
+              <option value="Monagas">Monagas (Maturín)</option>
+              <option value="Nueva Esparta">Nueva Esparta (Margarita)</option>
+              <option value="Vargas / La Guaira">La Guaira (Maiquetía)</option>
+              <option value="Apure">Apure (San Fernando)</option>
+              <option value="Barinas">Barinas</option>
+              <option value="Sucre">Sucre (Cumaná)</option>
+              <option value="Amazonas">Amazonas</option>
+              <option value="Delta Amacuro">Delta Amacuro</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Grid del Mapa y Panel de Inspección de Estado -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+          <!-- Lienzo del Mapa SVG Interactivo Mejorado (8 columnas) -->
+          <div class="lg:col-span-8 relative bg-slate-950 rounded-2xl p-3 md:p-5 overflow-hidden flex items-center justify-center min-h-[480px] border border-slate-800 shadow-inner">
+            
+            <svg id="venezuela-svg-map" viewBox="0 0 920 640" class="w-full max-w-[850px] h-auto select-none">
+              <defs>
+                <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3.5" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+                <linearGradient id="seaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#070c1a" />
+                  <stop offset="100%" stop-color="#020611" />
+                </linearGradient>
+              </defs>
+
+              <!-- Fondo Mar Caribe / Océano Atlántico -->
+              <rect width="920" height="640" fill="url(#seaGrad)" rx="16" />
+
+              <!-- Coordenadas Geográficas Sutiles -->
+              <g stroke="#1e293b" stroke-width="0.5" stroke-dasharray="3,3">
+                <line x1="0" y1="120" x2="920" y2="120" />
+                <line x1="0" y1="240" x2="920" y2="240" />
+                <line x1="0" y1="360" x2="920" y2="360" />
+                <line x1="0" y1="480" x2="920" y2="480" />
+                <line x1="220" y1="0" x2="220" y2="640" />
+                <line x1="440" y1="0" x2="440" y2="640" />
+                <line x1="660" y1="0" x2="660" y2="640" />
+              </g>
+
+              <text x="440" y="55" fill="#1e3a5f" font-size="12" font-weight="black" letter-spacing="4" text-anchor="middle" pointer-events="none">MAR CARIBE</text>
+              <text x="820" y="220" fill="#1e3a5f" font-size="10" font-weight="black" letter-spacing="2" text-anchor="middle" pointer-events="none">OCÉANO ATLÁNTICO</text>
+
+              <!-- POLÍGONOS DE ESTADOS -->
+              <!-- Zulia -->
+              <path id="state-Zulia" class="map-state" onclick="seleccionarRegionMapa('Zulia')"
+                d="M 105 85 L 135 60 L 160 85 L 155 130 L 175 140 L 185 185 L 165 240 L 130 250 L 95 205 L 90 140 Z" />
+              
+              <!-- Lago de Maracaibo -->
+              <path class="map-lake" pointer-events="none"
+                d="M 135 135 C 145 130 160 145 160 165 C 160 185 148 205 138 200 C 130 195 125 160 135 135 Z" />
+              <text x="145" y="170" fill="#bae6fd" font-size="7" font-weight="bold" text-anchor="middle" pointer-events="none">L. Maracaibo</text>
+
+              <!-- Falcón -->
+              <path id="state-Falcon" class="map-state" onclick="seleccionarRegionMapa('Falcón')"
+                d="M 162 85 L 210 80 L 235 40 L 255 45 L 248 85 L 305 105 L 320 140 L 245 145 L 195 130 L 160 120 Z" />
+              <text x="245" y="65" fill="#94a3b8" font-size="8" font-weight="bold" pointer-events="none">PARAGUANÁ</text>
+
+              <!-- Táchira -->
+              <path id="state-Tachira" class="map-state" onclick="seleccionarRegionMapa('Táchira')"
+                d="M 95 250 L 130 248 L 140 280 L 110 305 L 85 285 Z" />
+
+              <!-- Mérida -->
+              <path id="state-Merida" class="map-state" onclick="seleccionarRegionMapa('Mérida')"
+                d="M 132 245 L 175 235 L 190 270 L 142 280 Z" />
+
+              <!-- Trujillo -->
+              <path id="state-Trujillo" class="map-state" onclick="seleccionarRegionMapa('Trujillo')"
+                d="M 175 200 L 210 195 L 215 235 L 175 235 Z" />
+
+              <!-- Lara -->
+              <path id="state-Lara" class="map-state" onclick="seleccionarRegionMapa('Lara')"
+                d="M 195 145 L 270 140 L 285 195 L 210 200 Z" />
+
+              <!-- Yaracuy -->
+              <path id="state-Yaracuy" class="map-state" onclick="seleccionarRegionMapa('Yaracuy')"
+                d="M 270 140 L 310 135 L 315 175 L 280 180 Z" />
+
+              <!-- Carabobo -->
+              <path id="state-Carabobo" class="map-state" onclick="seleccionarRegionMapa('Carabobo')"
+                d="M 310 130 L 360 128 L 365 175 L 315 178 Z" />
+
+              <!-- Aragua -->
+              <path id="state-Aragua" class="map-state" onclick="seleccionarRegionMapa('Aragua')"
+                d="M 360 125 L 398 125 L 405 185 L 365 180 Z" />
+
+              <!-- Lago de Valencia -->
+              <ellipse cx="362" cy="155" rx="9" ry="5" class="map-lake" pointer-events="none" />
+
+              <!-- La Guaira / Vargas -->
+              <path id="state-Vargas" class="map-state" onclick="seleccionarRegionMapa('Vargas / La Guaira')"
+                d="M 398 118 L 460 120 L 458 132 L 398 130 Z" />
+
+              <!-- Caracas (Distrito Capital) -->
+              <path id="state-Caracas" class="map-state" onclick="seleccionarRegionMapa('Caracas')"
+                d="M 402 130 L 435 130 L 436 150 L 402 150 Z" />
+
+              <!-- Miranda -->
+              <path id="state-Miranda" class="map-state" onclick="seleccionarRegionMapa('Miranda')"
+                d="M 435 130 L 495 130 L 515 175 L 440 185 L 420 155 Z" />
+
+              <!-- Portuguesa -->
+              <path id="state-Portuguesa" class="map-state" onclick="seleccionarRegionMapa('Portuguesa')"
+                d="M 210 205 L 265 200 L 275 250 L 215 250 Z" />
+
+              <!-- Cojedes -->
+              <path id="state-Cojedes" class="map-state" onclick="seleccionarRegionMapa('Cojedes')"
+                d="M 275 195 L 340 185 L 345 245 L 275 250 Z" />
+
+              <!-- Barinas -->
+              <path id="state-Barinas" class="map-state" onclick="seleccionarRegionMapa('Barinas')"
+                d="M 142 278 L 220 252 L 285 305 L 210 335 L 140 310 Z" />
+
+              <!-- Guárico -->
+              <path id="state-Guarico" class="map-state" onclick="seleccionarRegionMapa('Guárico')"
+                d="M 345 185 L 465 185 L 490 275 L 350 280 Z" />
+
+              <!-- Anzoátegui -->
+              <path id="state-Anzoategui" class="map-state" onclick="seleccionarRegionMapa('Anzoátegui')"
+                d="M 495 140 L 575 140 L 580 270 L 490 275 Z" />
+
+              <!-- Sucre -->
+              <path id="state-Sucre" class="map-state" onclick="seleccionarRegionMapa('Sucre')"
+                d="M 540 120 L 670 115 L 675 145 L 565 145 Z" />
+
+              <!-- Nueva Esparta -->
+              <g class="map-state" id="state-NuevaEsparta" onclick="seleccionarRegionMapa('Nueva Esparta')">
+                <path d="M 585 75 C 600 70 615 75 625 80 C 615 90 600 95 585 90 Z" />
+                <circle cx="630" cy="85" r="4" fill="#38bdf8" />
+              </g>
+
+              <!-- Monagas -->
+              <path id="state-Monagas" class="map-state" onclick="seleccionarRegionMapa('Monagas')"
+                d="M 575 145 L 655 145 L 670 215 L 580 220 Z" />
+
+              <!-- Delta Amacuro -->
+              <path id="state-DeltaAmacuro" class="map-state" onclick="seleccionarRegionMapa('Delta Amacuro')"
+                d="M 660 160 L 730 185 L 755 240 L 670 265 L 655 210 Z" />
+
+              <!-- Apure -->
+              <path id="state-Apure" class="map-state" onclick="seleccionarRegionMapa('Apure')"
+                d="M 140 310 L 285 305 L 485 300 L 460 370 L 210 380 Z" />
+
+              <!-- Río Orinoco -->
+              <path class="map-river" pointer-events="none"
+                d="M 370 470 Q 420 370 480 300 Q 560 270 660 220 L 730 200" />
+              <text x="540" y="295" fill="#38bdf8" font-size="8" font-weight="bold" font-style="italic" pointer-events="none">Río Orinoco</text>
+
+              <!-- Bolívar -->
+              <path id="state-Bolivar" class="map-state" onclick="seleccionarRegionMapa('Bolívar')"
+                d="M 485 295 L 665 245 L 750 250 L 785 410 L 590 480 L 480 365 Z" />
+
+              <!-- Río Caroní -->
+              <path class="map-river" pointer-events="none" stroke-width="1.8"
+                d="M 625 430 L 620 350 L 635 295 L 640 255" />
+              <text x="640" y="365" fill="#38bdf8" font-size="7" font-weight="bold" font-style="italic" pointer-events="none">Río Caroní</text>
+
+              <!-- Amazonas -->
+              <path id="state-Amazonas" class="map-state" onclick="seleccionarRegionMapa('Amazonas')"
+                d="M 340 380 L 475 365 L 590 485 L 460 610 L 335 550 Z" />
+
+              <!-- ETIQUETAS -->
+              <g fill="#94a3b8" font-size="9" font-weight="bold" pointer-events="none">
+                <text x="120" y="125">ZULIA</text>
+                <text x="215" y="115">FALCÓN</text>
+                <text x="235" y="175">LARA</text>
+                <text x="88" y="275">TÁCHIRA</text>
+                <text x="145" y="260">MÉRIDA</text>
+                <text x="325" y="160">CARABOBO</text>
+                <text x="408" y="142" fill="#ffffff" font-weight="black">CARACAS</text>
+                <text x="448" y="160">MIRANDA</text>
+                <text x="290" y="340">APURE</text>
+                <text x="390" y="235">GUÁRICO</text>
+                <text x="520" y="210">ANZOÁTEGUI</text>
+                <text x="610" y="180">MONAGAS</text>
+                <text x="585" y="70" fill="#93c5fd">MARGARITA</text>
+                <text x="600" y="350" fill="#e2e8f0" font-size="14" font-weight="black">BOLÍVAR</text>
+                <text x="410" y="490" fill="#cbd5e1" font-size="12" font-weight="black">AMAZONAS</text>
+                <text x="670" y="200" font-size="8">DELTA</text>
+              </g>
+
+              <!-- PINES DE CALOR -->
+              <g class="map-pin" onclick="seleccionarRegionMapa('Caracas')">
+                <circle cx="418" cy="140" r="20" fill="#3b82f6" fill-opacity="0.3" class="animate-ping" />
+                <circle cx="418" cy="140" r="14" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                <text x="418" y="144" fill="#ffffff" font-size="11" font-weight="black" text-anchor="middle">14</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Zulia')">
+                <circle cx="145" cy="145" r="18" fill="#ef4444" fill-opacity="0.3" class="animate-ping" />
+                <circle cx="145" cy="145" r="13" fill="#dc2626" stroke="#ffffff" stroke-width="2" />
+                <text x="145" y="149" fill="#ffffff" font-size="10" font-weight="black" text-anchor="middle">11</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Táchira')">
+                <circle cx="112" cy="275" r="16" fill="#f59e0b" fill-opacity="0.3" class="animate-ping" />
+                <circle cx="112" cy="275" r="11" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+                <text x="112" y="279" fill="#ffffff" font-size="10" font-weight="black" text-anchor="middle">8</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Bolívar')">
+                <circle cx="635" cy="320" r="17" fill="#ef4444" fill-opacity="0.3" class="animate-ping" />
+                <circle cx="635" cy="320" r="12" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+                <text x="635" y="324" fill="#ffffff" font-size="10" font-weight="black" text-anchor="middle">9</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Carabobo')">
+                <circle cx="340" cy="155" r="15" fill="#3b82f6" fill-opacity="0.25" class="animate-ping" />
+                <circle cx="340" cy="155" r="10" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+                <text x="340" y="159" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">7</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Lara')">
+                <circle cx="245" cy="175" r="14" fill="#10b981" fill-opacity="0.25" class="animate-ping" />
+                <circle cx="245" cy="175" r="9.5" fill="#059669" stroke="#ffffff" stroke-width="1.5" />
+                <text x="245" y="178" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">6</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Anzoátegui')">
+                <circle cx="530" cy="190" r="14" fill="#3b82f6" fill-opacity="0.25" class="animate-ping" />
+                <circle cx="530" cy="190" r="9.5" fill="#2563eb" stroke="#ffffff" stroke-width="1.5" />
+                <text x="530" y="193" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">6</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Miranda')">
+                <circle cx="455" cy="165" r="15" fill="#f59e0b" fill-opacity="0.25" class="animate-ping" />
+                <circle cx="455" cy="165" r="10" fill="#d97706" stroke="#ffffff" stroke-width="1.5" />
+                <text x="455" y="169" fill="#ffffff" font-size="9" font-weight="bold" text-anchor="middle">8</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Vargas / La Guaira')">
+                <circle cx="420" cy="120" r="8" fill="#10b981" stroke="#ffffff" stroke-width="1" />
+                <text x="420" y="123" fill="#ffffff" font-size="8" font-weight="bold" text-anchor="middle">4</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Apure')">
+                <circle cx="330" cy="335" r="9" fill="#ef4444" stroke="#ffffff" stroke-width="1" />
+                <text x="330" y="338" fill="#ffffff" font-size="8" font-weight="bold" text-anchor="middle">5</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Mérida')">
+                <circle cx="160" cy="255" r="9" fill="#3b82f6" stroke="#ffffff" stroke-width="1" />
+                <text x="160" y="258" fill="#ffffff" font-size="8" font-weight="bold" text-anchor="middle">5</text>
+              </g>
+
+              <g class="map-pin" onclick="seleccionarRegionMapa('Nueva Esparta')">
+                <circle cx="595" cy="85" r="8" fill="#38bdf8" stroke="#ffffff" stroke-width="1" />
+                <text x="595" y="88" fill="#ffffff" font-size="7" font-weight="bold" text-anchor="middle">3</text>
+              </g>
+
+            </svg>
+
+            <!-- Controles flotantes en el mapa -->
+            <div class="absolute top-4 right-4 flex flex-col space-y-1 bg-slate-900/80 backdrop-blur p-1 rounded-lg border border-slate-700">
+              <button onclick="zoomMap(1.15)" class="w-7 h-7 flex items-center justify-center text-white hover:bg-slate-800 rounded font-bold text-sm">+</button>
+              <button onclick="zoomMap(0.85)" class="w-7 h-7 flex items-center justify-center text-white hover:bg-slate-800 rounded font-bold text-sm">-</button>
+              <button onclick="resetMapZoom()" class="w-7 h-7 flex items-center justify-center text-slate-300 hover:bg-slate-800 rounded text-xs" title="Restablecer">↺</button>
+            </div>
+          </div>
+
+          <!-- Panel Lateral de Inspección del Estado Seleccionado (4 columnas) -->
+          <div class="lg:col-span-4 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between space-y-4 shadow-xs">
+            <div class="space-y-3">
+              <div class="flex items-center justify-between border-b border-slate-200 pb-2">
+                <span class="text-[10px] text-blue-700 font-black uppercase tracking-wider bg-blue-100 px-2 py-0.5 rounded">Ficha Regional</span>
+                <span id="state-news-badge" class="text-xs font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200">14 reportes</span>
+              </div>
+
+              <div>
+                <h3 id="panel-state-name" class="text-lg font-black text-slate-900 leading-tight">Caracas (Distrito Capital)</h3>
+                <span id="panel-state-capital" class="text-xs text-slate-500 font-medium">Sede de los poderes públicos • Región Central</span>
+              </div>
+
+              <!-- Distribución de Categorías en este Estado -->
+              <div class="space-y-1.5 pt-1">
+                <span class="text-[11px] font-bold text-slate-700">Composición de hechos registrados:</span>
+                <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div class="bg-white p-2 rounded-lg border border-slate-200">
+                    <span class="text-slate-400 block text-[10px]">Servicios Públicos</span>
+                    <strong id="stat-state-servicios" class="text-red-600 font-bold">5 casos</strong>
+                  </div>
+                  <div class="bg-white p-2 rounded-lg border border-slate-200">
+                    <span class="text-slate-400 block text-[10px]">Violaciones DDHH</span>
+                    <strong id="stat-state-ddhh" class="text-amber-600 font-bold">4 casos</strong>
+                  </div>
+                  <div class="bg-white p-2 rounded-lg border border-slate-200">
+                    <span class="text-slate-400 block text-[10px]">Política y Partidos</span>
+                    <strong id="stat-state-politica" class="text-blue-600 font-bold">3 casos</strong>
+                  </div>
+                  <div class="bg-white p-2 rounded-lg border border-slate-200">
+                    <span class="text-slate-400 block text-[10px]">Economía / Sucesos</span>
+                    <strong id="stat-state-otros" class="text-slate-700 font-bold">2 casos</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Medios con Cobertura en la Zona -->
+              <div class="space-y-1 pt-1">
+                <span class="text-[11px] font-bold text-slate-700">Medios con reportes en terreno:</span>
+                <div id="panel-state-media" class="flex flex-wrap gap-1 text-[10px]">
+                  <span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-medium">Efecto Cocuyo</span>
+                  <span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-medium">Crónica Uno</span>
+                  <span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-medium">TalCual</span>
+                  <span class="bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded font-medium">El Nacional</span>
+                </div>
+              </div>
+
+              <!-- Titular Reciente del Estado -->
+              <div class="bg-white border border-slate-200 rounded-xl p-3 space-y-1">
+                <span class="text-[10px] text-blue-600 font-bold">Último reporte en la zona:</span>
+                <p id="panel-state-headline" class="text-xs font-bold text-slate-800 leading-snug">
+                  "Docentes y personal de salud marchan pacíficamente por salario digno en Caracas"
+                </p>
+              </div>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="space-y-2 pt-2 border-t border-slate-200">
+              <button onclick="aplicarFiltroEstadoDesdeMapa()" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs">
+                Filtrar Noticias de Este Estado en Portada 📰
+              </button>
+              <button onclick="limpiarFiltroRegionMapa()" class="w-full py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold transition-colors">
+                Restablecer Vista Nacional
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Barra de Botones de Acceso Rápido por Estados -->
+        <div class="flex flex-wrap items-center gap-1.5 pt-2 text-xs border-t border-slate-100">
+          <span class="font-bold text-slate-500 text-[11px]">Acceso rápido:</span>
+          <button onclick="seleccionarRegionMapa('Caracas')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Caracas (14)
+          </button>
+          <button onclick="seleccionarRegionMapa('Zulia')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Zulia (11)
+          </button>
+          <button onclick="seleccionarRegionMapa('Bolívar')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Bolívar (9)
+          </button>
+          <button onclick="seleccionarRegionMapa('Táchira')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Táchira (8)
+          </button>
+          <button onclick="seleccionarRegionMapa('Miranda')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Miranda (8)
+          </button>
+          <button onclick="seleccionarRegionMapa('Carabobo')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Carabobo (7)
+          </button>
+          <button onclick="seleccionarRegionMapa('Lara')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Lara (6)
+          </button>
+          <button onclick="seleccionarRegionMapa('Anzoátegui')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Anzoátegui (6)
+          </button>
+          <button onclick="seleccionarRegionMapa('Apure')" class="px-2 py-1 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 text-slate-700 font-semibold rounded-md transition-colors text-[11px]">
+            📍 Apure (5)
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PESTAÑA 3: Base de Datos Analítica & Multi-Fuente -->
+    <section id="view-analitica" class="hidden space-y-6">
+      <div id="analytics-lock-banner" class="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-3">
+        <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xl mx-auto">🔒</div>
+        <h3 class="text-lg font-bold text-amber-900">Acceso a Cifras, DDHH y Motor Multi-Fuente Restringido</h3>
+        <p class="text-xs text-amber-800 max-w-md mx-auto leading-relaxed">
+          Para acceder a la base cuantitativa de violaciones del <strong>Estatuto de Roma</strong>, matriz de <strong>actores</strong> y descarga de series en CSV, requieres acreditación como <strong>Periodista Verificado</strong>.
+        </p>
+        <button onclick="showTab('acceso')" class="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-semibold">
+          Canjear Código o Solicitar Acreditación
+        </button>
+      </div>
+
+      <div id="analytics-content" class="hidden space-y-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">Hechos Monitoreados</span>
+            <div class="text-2xl font-black text-slate-900 mt-1">1,248</div>
+            <span class="text-[11px] text-emerald-600 font-semibold">↑ 14% este mes</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">Violaciones DDHH (Estatuto Roma)</span>
+            <div class="text-2xl font-black text-red-600 mt-1">342</div>
+            <span class="text-[11px] text-red-500">Represión y Detenciones</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">Fallas de Servicios Públicos</span>
+            <div class="text-2xl font-black text-blue-600 mt-1">583</div>
+            <span class="text-[11px] text-slate-400">46.7% del total</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <span class="text-xs text-slate-500 font-medium">Fuentes Activas Monitoreadas</span>
+            <div class="text-2xl font-black text-indigo-700 mt-1">56</div>
+            <span class="text-[11px] text-indigo-600">Medios + Verificadores</span>
+          </div>
+        </div>
+
+        <!-- Matriz de Derechos Humanos (Estatuto de Roma) -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="text-base">⚖️</span>
+                <h3 class="text-sm font-bold text-slate-900">Violaciones de Derechos Humanos (Taxonomía Estatuto de Roma - CPI)</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Clasificación jurídica de hechos documentados en Venezuela.</p>
+            </div>
+            <button onclick="descargarDatasetCsv()" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors">
+              <span>📥 Descargar CSV</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div class="p-3 bg-red-50 border border-red-200 rounded-lg space-y-1">
+              <div class="flex justify-between font-bold text-red-900">
+                <span>Represión y Persecución (Art. 7.1.h)</span>
+                <span>134 casos</span>
+              </div>
+              <p class="text-[11px] text-red-700">Hostigamiento, allanamientos sin orden, asedio a sedes comunitarias y partidistas.</p>
+            </div>
+
+            <div class="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1">
+              <div class="flex justify-between font-bold text-amber-900">
+                <span>Detenciones Arbitrarias (Art. 7.1.e)</span>
+                <span>88 casos</span>
+              </div>
+              <p class="text-[11px] text-amber-700">Capturas sin orden judicial, incomunicación de detenidos y traslados irregulares.</p>
+            </div>
+
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1">
+              <div class="flex justify-between font-bold text-blue-900">
+                <span>Censura y Libertad de Expresión</span>
+                <span>72 casos</span>
+              </div>
+              <p class="text-[11px] text-blue-700">Bloqueos de DNS a medios, ciberataques y despojo de equipos a reporteros.</p>
+            </div>
+
+            <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1">
+              <div class="flex justify-between font-bold text-emerald-900">
+                <span>Protestas y Manifestaciones Pacíficas</span>
+                <span>48 hechos</span>
+              </div>
+              <p class="text-[11px] text-emerald-700">Reclamos laborales de docentes y trabajadores de la salud; protestas por agua y luz.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Motor Multi-Fuente -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="flex items-center space-x-2">
+                <span class="text-base">🔀</span>
+                <h3 class="text-sm font-bold text-slate-900">Búsqueda y Contraste Multi-Fuente en Tiempo Real</h3>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Agrupación automática de medios que cubren el mismo acontecimiento.</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Buscar Evento</label>
+              <input type="text" id="multi-search-input" oninput="filtrarEventosMultiFuente()" placeholder="Ej: apagon, dgcim, cne, protesta..." class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none">
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Actor Involucrado</label>
+              <select id="multi-actor-filter" onchange="filtrarEventosMultiFuente()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none">
+                <option value="ALL">Todos los actores</option>
+                <option value="DGCIM">DGCIM (Contrainteligencia)</option>
+                <option value="SEBIN">SEBIN (Inteligencia)</option>
+                <option value="PNB">PNB / DAET</option>
+                <option value="GNB">GNB (Guardia Nacional)</option>
+                <option value="Corpoelec">Corpoelec</option>
+                <option value="CNE">CNE (Poder Electoral)</option>
+                <option value="Plataforma Unitaria">Plataforma Unitaria</option>
+                <option value="PROVEA">PROVEA (ONG DDHH)</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase">Categoría DDHH (Estatuto de Roma)</label>
+              <select id="multi-rome-filter" onchange="filtrarEventosMultiFuente()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none">
+                <option value="ALL">Todas las tipificaciones</option>
+                <option value="REPRESION_PERSECUCION">Represión y Persecución (Art. 7.1.h)</option>
+                <option value="DETENCION_ARBITRARIA">Detención Arbitraria (Art. 7.1.e)</option>
+                <option value="PROTESTA_PACIFICA">Protesta Pacífica</option>
+                <option value="CENSURA_LIBERTAD_EXPRESION">Censura y Libertad de Expresión</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="multi-source-results-container" class="space-y-4 pt-2">
+            <!-- Renderizado dinámico -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PESTAÑA 4: Radar de Desinformación -->
+    <section id="view-desinformacion" class="hidden space-y-6">
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🛡️</span>
+              <h2 class="text-lg font-bold text-slate-900">Radar de Desinformación y Fact-Checking</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">Repositorio de bulos desmentidos por la red de verificadores venezolanos.</p>
+          </div>
+          <button onclick="abrirModalNuevoFactCheck()" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold">
+            + Registrar Desmentido
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+          <div class="md:col-span-2 relative">
+            <input type="text" id="factcheck-search" oninput="filtrarFactChecks()" placeholder="Buscar rumor o bulo desmentido..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs">
+            <span class="absolute left-3 top-2.5 text-slate-400 text-xs">🔍</span>
+          </div>
+          <div>
+            <select id="factcheck-verdict-filter" onchange="filtrarFactChecks()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <option value="ALL">Todos los veredictos</option>
+              <option value="FALSO">🔴 Falso</option>
+              <option value="ENGANOSO">🟡 Engañoso</option>
+              <option value="MANIPULADO">🟠 Manipulado</option>
+              <option value="SIN_EVIDENCIA">⚪ Sin Evidencia</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="factcheck-list-container" class="space-y-3"></div>
+      </div>
+    </section>
+
+    <!-- PESTAÑA 5: Buscador FTS5 -->
+    <section id="view-buscador" class="hidden space-y-6">
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 md:p-6 shadow-sm space-y-4">
+        
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-xl">🔍</span>
+              <h2 class="text-lg font-bold text-slate-900">Motor de Búsqueda Avanzada de Noticias</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-0.5">
+              Búsqueda en tiempo real sobre los 56 medios y canales. Filtra por términos clave, estado geográfico, categoría o medio emisor.
+            </p>
+          </div>
+          
+          <button onclick="buscarNoticiasInternetEnVivo()" id="btn-rastreo-internet" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all flex items-center space-x-1.5 shadow-xs shrink-0">
+            <span id="rastreo-icon">🔄</span>
+            <span id="rastreo-text">Buscar Noticias en Internet</span>
+          </button>
+        </div>
+
+        <!-- Banner de estado del rastreo en vivo -->
+        <div id="live-scraping-banner" class="hidden text-xs p-3 rounded-xl font-medium transition-all"></div>
+
+        <!-- Barra de Búsqueda Principal -->
+        <div class="relative">
+          <input
+            type="text"
+            id="search-input"
+            oninput="ejecutarBusquedaAvanzada()"
+            placeholder="Buscar por palabras clave (ej: apagon, luz, hospital, cne, protesta, dgcim, salario, frontera)..."
+            class="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all shadow-xs"
+          />
+          <span class="absolute left-3.5 top-3 text-slate-400 text-base">🔍</span>
+          <button onclick="limpiarBusquedaInput()" class="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 text-sm font-bold">✕</button>
+        </div>
+
+        <!-- Filtros Combinados -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Estado / Región</label>
+            <select id="filter-region" onchange="ejecutarBusquedaAvanzada()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none font-medium">
+              <option value="ALL">📍 Todas las regiones</option>
+              <option value="Caracas">Caracas (Distrito Capital)</option>
+              <option value="Zulia">Zulia (Maracaibo)</option>
+              <option value="Táchira">Táchira (San Cristóbal)</option>
+              <option value="Bolívar">Bolívar (Guayana)</option>
+              <option value="Carabobo">Carabobo (Valencia)</option>
+              <option value="Lara">Lara (Barquisimeto)</option>
+              <option value="Miranda">Miranda (Los Teques / Valles del Tuy)</option>
+              <option value="Aragua">Aragua (Maracay)</option>
+              <option value="Anzoátegui">Anzoátegui (Barcelona)</option>
+              <option value="Mérida">Mérida (Andes)</option>
+              <option value="Falcón">Falcón (Coro)</option>
+              <option value="Monagas">Monagas (Maturín)</option>
+              <option value="Nueva Esparta">Nueva Esparta (Margarita)</option>
+              <option value="Vargas / La Guaira">La Guaira (Maiquetía)</option>
+              <option value="Apure">Apure (San Fernando)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Categoría Temática</label>
+            <select id="filter-category" onchange="ejecutarBusquedaAvanzada()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none font-medium">
+              <option value="ALL">📁 Todas las categorías</option>
+              <option value="Servicios Públicos">Servicios Públicos (Luz / Agua / Gas)</option>
+              <option value="Política y Partidos">Política y Partidos</option>
+              <option value="Derechos Humanos y Medios">Derechos Humanos y Medios</option>
+              <option value="Economía y Laboral">Economía y Laboral</option>
+              <option value="Sucesos y Seguridad">Sucesos y Seguridad</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[11px] font-bold text-slate-600 uppercase mb-1">Medio / Fuente</label>
+            <select id="filter-source" onchange="ejecutarBusquedaAvanzada()" class="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none font-medium">
+              <option value="ALL">📡 Todos los medios emisores</option>
+              <option value="Efecto Cocuyo">Efecto Cocuyo</option>
+              <option value="El Pitazo">El Pitazo</option>
+              <option value="TalCual">TalCual</option>
+              <option value="Runrunes">Runrunes</option>
+              <option value="Crónica Uno">Crónica Uno</option>
+              <option value="El Carabobeño">El Carabobeño</option>
+              <option value="Radio Fe y Alegría">Radio Fe y Alegría</option>
+              <option value="Armando.info">Armando.info</option>
+              <option value="VE Sin Filtro">VE Sin Filtro</option>
+              <option value="PROVEA">PROVEA</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Contador y Estado de Coincidencias -->
+        <div class="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+          <span id="search-feedback-count" class="font-medium text-slate-700">Mostrando noticias indexadas</span>
+          <button onclick="limpiarTodosLosFiltrosBusqueda()" class="text-blue-600 hover:text-blue-800 font-bold hover:underline">
+            Restablecer filtros
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Contenedor de Resultados con Fichas Enriquecidas -->
+      <div id="search-results" class="space-y-3">
+        <!-- Renderizado dinámico -->
+      </div>
+    </section>
+
+    <!-- PESTAÑA 6: Directorio Completo de Medios y Verificadores (56 Fuentes) -->
+    <section id="view-medios" class="hidden space-y-6">
+      <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">📡 Directorio de Medios y Verificadores Monitoreados</h2>
+            <p class="text-xs text-slate-500">56 fuentes de información nacional, regional, comunitaria y fact-checking a coste $0 de API.</p>
+          </div>
+          <span class="text-xs bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded-full">56 Fuentes Activas</span>
+        </div>
+
+        <!-- Buscador de Medios -->
+        <input type="text" id="directory-search" oninput="filtrarDirectorioMedios()" placeholder="Buscar medio o verificador (ej: Efecto Cocuyo, Armando.info, El Carabobeño, EsPaja, Radio Fe y Alegría)..." class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+
+        <!-- Grid de Medios y Verificadores -->
+        <div id="media-directory-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <!-- Renderizado dinámico -->
+        </div>
+      </div>
+    </section>
+
+    <!-- PESTAÑA 7: Acreditaciones y Panel de Aprobaciones (Coordinación / Admin) -->
+    <section id="view-acceso" class="hidden space-y-6">
+      
+      <!-- Selector de Modo: Solicitante (Periodista) vs Panel de Aprobaciones (Admin) -->
+      <div class="bg-white p-2 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between gap-2 max-w-xl mx-auto">
+        <button onclick="cambiarModoAcreditacion('APPLICANT')" id="btn-modo-applicant" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-blue-700 bg-blue-50 border border-blue-200 transition-all">
+          📝 Solicitar Acreditación (Periodistas)
+        </button>
+        <button onclick="cambiarModoAcreditacion('ADMIN')" id="btn-modo-admin" class="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 hover:bg-slate-50 transition-all flex items-center justify-center space-x-1.5">
+          <span>🛡️ Panel de Aprobaciones (Admin)</span>
+          <span id="admin-badge-count" class="bg-amber-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">3</span>
+        </button>
+      </div>
+
+      <!-- VISTA A: Para Periodistas e Investigadores (Canje de Código o Formulario) -->
+      <div id="acceso-view-applicant" class="space-y-6">
+        <div class="text-center max-w-md mx-auto space-y-1">
+          <h2 class="text-xl font-bold text-slate-900">Acreditación de Periodistas e Investigadores</h2>
+          <p class="text-xs text-slate-500">Obtén acceso a la base de datos de DDHH (Estatuto de Roma), motor multi-fuente y descarga de CSV:</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          
+          <!-- Vía Rápida: Código -->
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
+            <div class="space-y-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-lg">🎟️</div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-800">Vía Rápida: Código de Invitación</h3>
+                  <p class="text-[11px] text-slate-500">Activación inmediata para aliados</p>
+                </div>
+              </div>
+              <div>
+                <label for="input-code" class="block text-xs font-semibold text-slate-700 mb-1">CÓDIGO ALFANUMÉRICO</label>
+                <input type="text" id="input-code" placeholder="EJ: SNTP-VZLA-2026" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono uppercase focus:outline-none">
+                <p class="text-[10px] text-slate-400 mt-1">Códigos activos: <code>SNTP-VZLA-2026</code> o <code>PROVEA-ALLIED</code></p>
+              </div>
+              <div id="code-feedback" class="hidden text-xs p-2.5 rounded-lg font-medium"></div>
+            </div>
+            <button onclick="canjearCodigo()" class="mt-4 w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs">
+              Activar Acreditación Inmediata
+            </button>
+          </div>
+
+          <!-- Vía Estándar: Formulario -->
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div class="flex items-center space-x-3 mb-4">
+              <div class="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-lg">📝</div>
+              <div>
+                <h3 class="text-sm font-bold text-slate-800">Vía Estándar: Formulario de Revisión</h3>
+                <p class="text-[11px] text-slate-500">Postulación formal para periodistas y ONGs</p>
+              </div>
+            </div>
+            <form onsubmit="enviarFormulario(event)" class="space-y-3 text-xs">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Nombre Completo *</label>
+                <input type="text" id="form-name" required placeholder="Ej: Carlos Mendoza" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label class="block font-semibold text-slate-700 mb-1">Vinculación *</label>
+                  <select id="form-type" class="w-full px-2.5 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none font-medium">
+                    <option value="Medio Contratado">🏢 Medio / ONG</option>
+                    <option value="Freelance / Independiente">💼 Freelance / Independiente</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-700 mb-1">Medio u Organización *</label>
+                  <input type="text" id="form-org" required placeholder="Ej: TalCual / Freelance" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+                </div>
+                <div>
+                  <label class="block font-semibold text-slate-700 mb-1">Cargo o Función *</label>
+                  <input type="text" id="form-role" required placeholder="Ej: Reportero / Fotoperiodista" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+                </div>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Correo Electrónico Institucional *</label>
+                <input type="email" id="form-email" required placeholder="periodista@medio.com" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Propósito de la Investigación *</label>
+                <textarea id="form-purpose" required rows="2" placeholder="Describe brevemente el tema o cobertura para la que requieres datos cuantitativos..." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none"></textarea>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">Enlace a Portafolio / Credencial Gremial</label>
+                <input type="url" id="form-proof" placeholder="https://talcualdigital.com/autor/tu-perfil o carnet CNP" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+              </div>
+              <div id="form-feedback" class="hidden text-xs p-2.5 rounded-lg font-medium"></div>
+              <button type="submit" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs">
+                Enviar Solicitud a Coordinación
+              </button>
+            </form>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- VISTA B: Panel de Administración y Aprobación de Acreditaciones (Para Coordinación Editorial) -->
+      <div id="acceso-view-admin" class="hidden space-y-6">
+        
+        <!-- Header del Panel de Coordinación -->
+        <div class="bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 text-white p-5 rounded-2xl shadow-sm border border-purple-900">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div class="flex items-center space-x-2 text-xs font-bold text-purple-300 uppercase tracking-wider mb-1">
+                <span>🛡️ Coordinación Editorial & Control de Acceso</span>
+              </div>
+              <h2 class="text-xl font-black">Bandeja de Aprobación de Acreditaciones</h2>
+              <p class="text-xs text-slate-300 mt-1 max-w-xl">
+                Revisa y valida la identidad de periodistas, corresponsales e investigadores que solicitan acceso a los datos de DDHH y herramientas analíticas.
+              </p>
+            </div>
+            <div class="flex items-center space-x-2">
+              <div class="flex items-center space-x-2">
+                <button onclick="descargarAcreditacionesExcel()" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center space-x-1.5 shadow-sm">
+                  <span>📥 Exportar a Excel (.xlsx / CSV)</span>
+                </button>
+                <button onclick="abrirModalNuevoCodigo()" class="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-lg text-xs font-bold transition-colors flex items-center space-x-1.5 shadow-sm">
+                  <span>+ Crear Código</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Métricas Rápidas de Acreditación -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+            <span class="text-xs text-slate-500 font-medium">Pendientes de Revisión</span>
+            <div id="metric-pending-count" class="text-2xl font-black text-amber-600 mt-1">3</div>
+            <span class="text-[11px] text-amber-500 font-semibold">Requieren decisión</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+            <span class="text-xs text-slate-500 font-medium">Periodistas Aprobados</span>
+            <div id="metric-approved-count" class="text-2xl font-black text-emerald-600 mt-1">18</div>
+            <span class="text-[11px] text-emerald-500 font-semibold">Acreditación activa</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+            <span class="text-xs text-slate-500 font-medium">Solicitudes Rechazadas</span>
+            <div id="metric-rejected-count" class="text-2xl font-black text-red-600 mt-1">4</div>
+            <span class="text-[11px] text-slate-400">Sin acreditación</span>
+          </div>
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+            <span class="text-xs text-slate-500 font-medium">Códigos de Invitación</span>
+            <div id="metric-codes-count" class="text-2xl font-black text-purple-700 mt-1">4</div>
+            <span class="text-[11px] text-purple-500">Aliados gremiales</span>
+          </div>
+        </div>
+
+        <!-- Filtros y Buscador de Solicitudes -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg text-xs">
+              <button onclick="filtrarSolicitudesStatus('PENDING')" id="status-btn-pending" class="px-3 py-1.5 rounded-md font-bold text-amber-800 bg-white shadow-xs">
+                ⏳ Pendientes (<span id="tab-pending-badge">3</span>)
+              </button>
+              <button onclick="filtrarSolicitudesStatus('APPROVED')" id="status-btn-approved" class="px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900 font-medium">
+                ✅ Aprobadas (18)
+              </button>
+              <button onclick="filtrarSolicitudesStatus('REJECTED')" id="status-btn-rejected" class="px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900 font-medium">
+                ❌ Rechazadas (4)
+              </button>
+              <button onclick="filtrarSolicitudesStatus('ALL')" id="status-btn-all" class="px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900 font-medium">
+                Todas
+              </button>
+            </div>
+
+            <div class="relative w-full sm:w-64">
+              <input type="text" id="requests-search-input" oninput="renderizarSolicitudesAcreditacion()" placeholder="Buscar por periodista o medio..." class="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+              <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lista de Solicitudes de Acreditación -->
+        <div id="accreditation-requests-container" class="space-y-3">
+          <!-- Renderizado dinámico -->
+        </div>
+
+        <!-- Sección de Gestión de Códigos de Invitación Activos -->
+        <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3 mt-6">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">🎟️ Códigos de Invitación Directa en Circulación</h3>
+              <p class="text-[11px] text-slate-500">Distribuidos a sindicatos y salas de redacción aliadas.</p>
+            </div>
+            <button onclick="abrirModalNuevoCodigo()" class="text-xs text-purple-700 hover:underline font-bold">
+              + Nuevo Código
+            </button>
+          </div>
+
+          <div id="active-invitation-codes-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            <!-- Renderizado dinámico de códigos -->
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- BARRA INFERIOR MÓVIL (PWA Bottom Navigation) -->
+  <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-40 flex items-center justify-around py-2 px-1 shadow-lg">
+    <button onclick="showTab('portada')" id="m-tab-portada" class="flex flex-col items-center justify-center text-blue-600 font-bold text-[10px] space-y-0.5">
+      <span class="text-base leading-none">📰</span>
+      <span>Portada</span>
+    </button>
+    <button onclick="showTab('mapa')" id="m-tab-mapa" class="flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5">
+      <span class="text-base leading-none">🗺️</span>
+      <span>Mapa</span>
+    </button>
+    <button onclick="showTab('analitica')" id="m-tab-analitica" class="flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5">
+      <span class="text-base leading-none">📊</span>
+      <span>Analítica</span>
+    </button>
+    <button onclick="showTab('desinformacion')" id="m-tab-desinformacion" class="flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5">
+      <span class="text-base leading-none">🛡️</span>
+      <span>Radar</span>
+    </button>
+    <button onclick="showTab('medios')" id="m-tab-medios" class="flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5">
+      <span class="text-base leading-none">📡</span>
+      <span>Medios</span>
+    </button>
+    <button onclick="showTab('acceso')" id="m-tab-acceso" class="flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5">
+      <span class="text-base leading-none">🎟️</span>
+      <span>Acceso</span>
+    </button>
+  </nav>
+
+  <!-- MODAL: Fact-Check -->
+  <div id="factcheck-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="text-base font-bold text-slate-900">🛡️ Registrar Nuevo Desmentido</h3>
+        <button onclick="cerrarModalNuevoFactCheck()" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+      </div>
+      <form onsubmit="guardarNuevoFactCheck(event)" class="space-y-3 text-xs">
+        <input type="text" id="fc-claim" required placeholder="Bulo o afirmación que circula *" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg">
+        <div class="grid grid-cols-2 gap-2">
+          <select id="fc-verdict" class="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg">
+            <option value="FALSO">🔴 Falso</option>
+            <option value="ENGANOSO">🟡 Engañoso</option>
+            <option value="MANIPULADO">🟠 Manipulado</option>
+            <option value="SIN_EVIDENCIA">⚪ Sin Evidencia</option>
+          </select>
+          <input type="text" id="fc-source" required placeholder="Medio verificador (ej: EsPaja)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg">
+        </div>
+        <textarea id="fc-explanation" required rows="3" placeholder="Explicación con hechos y pruebas..." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg"></textarea>
+        <input type="url" id="fc-url" placeholder="Enlace a la investigación completa" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg">
+        <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="cerrarModalNuevoFactCheck()" class="px-3 py-1.5 bg-slate-100 rounded-lg">Cancelar</button>
+          <button type="submit" class="px-4 py-1.5 bg-red-600 text-white rounded-lg font-semibold">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Rechazar Solicitud de Acreditación (Motivo) -->
+  <div id="reject-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-red-700 flex items-center space-x-1.5">
+          <span>❌</span>
+          <span>Rechazar Solicitud de Acreditación</span>
+        </h3>
+        <button onclick="cerrarModalRechazo()" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-600">
+        Indica el motivo de la decisión para notificar al postulante y registrarlo en la bitácora:
+      </p>
+
+      <input type="hidden" id="reject-request-id" value="">
+      <textarea id="reject-reason" rows="3" placeholder="Ej: No se adjuntó acreditación gremial vigente o no fue posible validar vínculo con el medio informado..." class="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none"></textarea>
+
+      <div class="flex justify-end space-x-2 pt-2">
+        <button onclick="cerrarModalRechazo()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold">
+          Cancelar
+        </button>
+        <button onclick="confirmarRechazoSolicitud()" class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold">
+          Confirmar Rechazo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Crear Nuevo Código de Invitación -->
+  <div id="new-code-modal" class="hidden fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+        <h3 class="text-sm font-bold text-purple-900 flex items-center space-x-1.5">
+          <span>🎟️</span>
+          <span>Generar Nuevo Código de Invitación</span>
+        </h3>
+        <button onclick="cerrarModalNuevoCodigo()" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+      </div>
+
+      <form onsubmit="guardarNuevoCodigo(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Organización o Medio Aliado *</label>
+          <input type="text" id="new-code-org" required placeholder="Ej: El Carabobeño / Efecto Cocuyo / SNTP" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Código Personalizado</label>
+            <input type="text" id="new-code-value" placeholder="Opcional (se autogenera)" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg font-mono uppercase focus:outline-none">
+          </div>
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Cupo Máximo de Periodistas *</label>
+            <input type="number" id="new-code-limit" required min="1" max="100" value="5" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none">
+          </div>
+        </div>
+        <div class="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+          <button type="button" onclick="cerrarModalNuevoCodigo()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium">Cancelar</button>
+          <button type="submit" class="px-4 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-semibold">Generar Código</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let currentRole = 'PUBLIC';
+    let currentAccreditationMode = 'APPLICANT';
+    let currentRequestsFilter = 'PENDING';
+    let activeRegionFilter = 'ALL';
+    let currentMapZoom = 1;
+
+    // Catálogo completo de las 56 Fuentes: 32 Medios y 24 Verificadores / ONGs
+    const allSourcesData = [
+      { name: "Efecto Cocuyo", category: "Medio", type: "Independiente / Investigación", url: "https://efectococuyo.com" },
+      { name: "El Pitazo", category: "Medio", type: "Independiente / Red Nacional", url: "https://elpitazo.net" },
+      { name: "Crónica Uno", category: "Medio", type: "Comunitario y DDHH", url: "https://cronica.uno" },
+      { name: "El Carabobeño", category: "Medio", type: "Regional / Centro", url: "https://el-carabobeno.com" },
+      { name: "El Estímulo", category: "Medio", type: "Economía y Sociedad", url: "https://elestimulo.com" },
+      { name: "Runrunes", category: "Medio", type: "Investigación y Política", url: "https://runrun.es" },
+      { name: "Caraota Digital", category: "Medio", type: "General / Digital", url: "https://caraotadigital.net" },
+      { name: "Alberto News", category: "Medio", type: "Última Hora", url: "https://albertonews.com" },
+      { name: "Monitoreamos", category: "Medio", type: "Noticias y Política", url: "https://monitoreamos.com" },
+      { name: "Agencia EFE", category: "Medio", type: "Internacional", url: "https://efe.com" },
+      { name: "Revista Semana", category: "Medio", type: "Internacional / Colombia", url: "https://semana.com" },
+      { name: "El Tiempo", category: "Medio", type: "Internacional", url: "https://eltiempo.com" },
+      { name: "Diario 2001", category: "Medio", type: "Nacional / Sucesos", url: "https://2001online.com" },
+      { name: "Diario La Región", category: "Medio", type: "Regional / Miranda", url: "https://diariolaregion.net" },
+      { name: "El Político", category: "Medio", type: "Análisis Político", url: "https://elpolitico.com" },
+      { name: "TV Venezuela", category: "Medio", type: "Audiovisual", url: "https://tvvenezuela.tv" },
+      { name: "Impacto Venezuela", category: "Medio", type: "Noticias y Sucesos", url: "https://impactovenezuela.com" },
+      { name: "La Gran Aldea", category: "Medio", type: "Opinión y Análisis", url: "https://lagranaldea.com" },
+      { name: "La Manada Digital", category: "Medio", type: "Comunitario", url: "https://lamanadadigital.com" },
+      { name: "Radio Fe y Alegría", category: "Medio", type: "Red Nacional Comunitaria", url: "https://radiofeyalegrianoticias.com" },
+      { name: "Noticiero Venevisión", category: "Medio", type: "Televisión", url: "https://noticierovenevision.net" },
+      { name: "Noticia al Día", category: "Medio", type: "Regional / Zulia", url: "https://noticiaaldia.com" },
+      { name: "Opinión y Noticias", category: "Medio", type: "Opinión", url: "https://opinionynoticias.com" },
+      { name: "Punto de Corte", category: "Medio", type: "Crítica y Política", url: "https://puntodecorte.net" },
+      { name: "TalCual", category: "Medio", type: "Independiente / Opinión", url: "https://talcualdigital.com" },
+      { name: "VivoPlay", category: "Medio", type: "Streaming", url: "https://vivoplay.net" },
+      { name: "Minuto 30", category: "Medio", type: "Frontera", url: "https://minuto30.com" },
+      { name: "Analítica", category: "Medio", type: "Opinión", url: "https://analitica.com" },
+      { name: "Aporrea", category: "Medio", type: "Crítica Popular", url: "https://aporrea.org" },
+      { name: "6to Poder Web", category: "Medio", type: "Digital", url: "https://6topoderweb.com" },
+      { name: "Dollar Paralelo Venezuela", category: "Medio", type: "Indicadores Económicos", url: "https://monitordolarvenezuela.com" },
+      { name: "Foco Informativo", category: "Medio", type: "Regional / Zulia", url: "https://focoinformativo.com" },
+      { name: "Armando.info", category: "Medio", type: "Periodismo de Investigación", url: "https://armando.info" },
+      { name: "El Nacional", category: "Medio", type: "Nacional / Decano", url: "https://elnacional.com" },
+      { name: "La Patilla", category: "Medio", type: "Tráfico Masivo", url: "https://lapatilla.com" },
+      { name: "NTN24", category: "Medio", type: "Internacional", url: "https://ntn24.com" },
+      { name: "VPItv", category: "Medio", type: "En Vivo", url: "https://vpitv.com" },
+      { name: "Infobae", category: "Medio", type: "Internacional", url: "https://infobae.com" },
+      { name: "Sumarium", category: "Medio", type: "Síntesis", url: "https://sumarium.info" },
+      { name: "Venezuela Al Día", category: "Medio", type: "Digital", url: "https://venezuelaaldia.com" },
+      { name: "Primer Informe", category: "Medio", type: "Investigación", url: "https://primerinforme.com" },
+      { name: "Su Noticiero", category: "Medio", type: "General", url: "https://sunoticiero.com" },
+      { name: "Maduradas", category: "Medio", type: "Agregador", url: "https://maduradas.com" },
+      { name: "EVTV Miami", category: "Medio", type: "Diáspora", url: "https://evtv.online" },
+      { name: "Alek Boyd", category: "Medio", type: "Anticorrupción", url: "https://infodio.com" },
+      { name: "PBS", category: "Medio", type: "Internacional", url: "https://pbs.org" },
+      { name: "El Liberal Venezolano", category: "Medio", type: "Opinión", url: "https://elliberalvenezolano.com" },
+      // Verificadores y Organizaciones
+      { name: "Cazadores de Fake News", category: "Verificador", type: "Operaciones de Red", url: "https://cazadoresdefakenews.info" },
+      { name: "Observatorio Venezolano de Fake News", category: "Verificador", type: "Fact-checking", url: "https://fake-news.medianalisis.org" },
+      { name: "EsPaja", category: "Verificador", type: "Fact-checking Cadenas", url: "https://espaja.com" },
+      { name: "Espacio Público", category: "Organización", type: "Libertad de Expresión", url: "https://espaciopublico.ong" },
+      { name: "IPYS Venezuela", category: "Organización", type: "Prensa y Periodismo", url: "https://ipysvenezuela.org" },
+      { name: "Medianálisis", category: "Organización", type: "Comunicación y Datos", url: "https://medianalisis.org" },
+      { name: "Observatorio Venezolano de Finanzas", category: "Organización", type: "Indicadores e Inflación", url: "https://ovfvenezuela.org" },
+      { name: "VE Sin Filtro", category: "Organización", type: "Bloqueos y Conectividad", url: "https://vesinfiltro.com" },
+      { name: "Servicio de Información Pública", category: "Organización", type: "Monitoreo Comunitario", url: "https://servicioinfopublica.com" },
+      { name: "PROVEA", category: "Organización", type: "Derechos Humanos", url: "https://provea.org" }
+    ];
+
+    // Datos de Noticias del Feed en Vivo con geolocalización y medios reales
+    let feedNews = [
+      {
+        id: 'fn_1',
+        title: 'Corte eléctrico masivo interrumpe bombeo de agua en Maracaibo y San Francisco',
+        snippet: 'Corresponsales de El Pitazo y Noticia al Día confirman que la caída de la línea 230kV paralizó acueductos en 4 municipios.',
+        sourceName: 'El Pitazo',
+        sourceType: 'Independiente',
+        sourceUrl: 'https://elpitazo.net/apagon-zulia',
+        region: 'Zulia',
+        category: 'Servicios Públicos',
+        publishedAt: '2026-10-06T14:15:00Z'
+      },
+      {
+        id: 'fn_2',
+        title: 'Armando.info revela nuevo entramado de sobreprecios en importación de turbinas eléctricas',
+        snippet: 'Investigación documenta desvío de fondos que debían destinarse a modernizar el Complejo Termoeléctrico de Tacoa.',
+        sourceName: 'Armando.info',
+        sourceType: 'Investigación',
+        sourceUrl: 'https://armando.info/investigacion-tacoa',
+        region: 'Caracas',
+        category: 'Economía y Laboral',
+        publishedAt: '2026-10-06T13:40:00Z'
+      },
+      {
+        id: 'fn_3',
+        title: 'VE Sin Filtro detecta bloqueo DNS contra tres medios digitales independientes',
+        snippet: 'Operadoras Cantv, Movistar y Digitel ejecutaron simultáneamente restricciones a portales informativos.',
+        sourceName: 'VE Sin Filtro',
+        sourceType: 'Organización Técnica',
+        sourceUrl: 'https://vesinfiltro.com/alerta-bloqueos',
+        region: 'Caracas',
+        category: 'Derechos Humanos y Medios',
+        publishedAt: '2026-10-06T13:10:00Z'
+      },
+      {
+        id: 'fn_4',
+        title: 'El Carabobeño reporta colapso de vialidad por lluvias torrenciales en el eje Valencia - Puerto Cabello',
+        snippet: 'Desbordamiento de quebradas incomunica sectores industriales del estado Carabobo este mediodía.',
+        sourceName: 'El Carabobeño',
+        sourceType: 'Regional',
+        sourceUrl: 'https://el-carabobeno.com/vialidad-lluvias',
+        region: 'Carabobo',
+        category: 'Sucesos y Seguridad',
+        publishedAt: '2026-10-06T12:50:00Z'
+      },
+      {
+        id: 'fn_5',
+        title: 'Radio Fe y Alegría alerta sobre falta de gasolina subsidiada en San Cristóbal y frontera del Táchira',
+        snippet: 'Colas de hasta 48 horas en estaciones de servicio afectan transporte público y distribución de hortalizas.',
+        sourceName: 'Radio Fe y Alegría',
+        sourceType: 'Red Comunitaria',
+        sourceUrl: 'https://radiofeyalegrianoticias.com/gasolina-tachira',
+        region: 'Táchira',
+        category: 'Servicios Públicos',
+        publishedAt: '2026-10-06T12:20:00Z'
+      },
+      {
+        id: 'fn_6',
+        title: 'Comisiones de la DGCIM detienen arbitrariamente a dirigente sindical de SIDOR en Puerto Ordaz',
+        snippet: 'Foro Penal y familiares denuncian allanamiento nocturno sin orden en el estado Bolívar.',
+        sourceName: 'Correo del Caroní',
+        sourceType: 'Regional / DDHH',
+        sourceUrl: 'https://correodelcaroni.com/sidor-dgcim',
+        region: 'Bolívar',
+        category: 'Derechos Humanos y Medios',
+        publishedAt: '2026-10-06T11:45:00Z'
+      },
+      {
+        id: 'fn_7',
+        title: 'Pescadores de La Guaira reportan fuerte oleaje y suspensión preventiva de zarpe en Maiquetía',
+        snippet: 'Autoridades portuarias del estado Vargas restringen salida de embarcaciones menores por 24 horas.',
+        sourceName: 'Diario La Región',
+        sourceType: 'Regional',
+        sourceUrl: 'https://diariolaregion.net/la-guaira-zarpe',
+        region: 'Vargas / La Guaira',
+        category: 'Sucesos y Seguridad',
+        publishedAt: '2026-10-06T11:10:00Z'
+      },
+      {
+        id: 'fn_8',
+        title: 'Productores de Apure denuncian pérdidas en cosecha de queso por fallas de diésel para refrigeración',
+        snippet: 'Asociaciones ganaderas en San Fernando y Achaguas piden suministro urgente de combustible.',
+        sourceName: 'Crónica Uno',
+        sourceType: 'Comunitario',
+        sourceUrl: 'https://cronica.uno/apure-productores',
+        region: 'Apure',
+        category: 'Economía y Laboral',
+        publishedAt: '2026-10-06T10:30:00Z'
+      }
+    ];
+
+    // Metadatos y Estadísticas Geográficas de Estados para el Mapa
+    const statesMapData = {
+      'Caracas': {
+        name: 'Caracas (Distrito Capital)',
+        capital: 'Caracas',
+        region: 'Región Capital',
+        newsCount: 14,
+        servicios: 5,
+        ddhh: 4,
+        politica: 3,
+        otros: 2,
+        media: ['Efecto Cocuyo', 'Crónica Uno', 'TalCual', 'El Nacional'],
+        headline: 'Docentes y personal de salud marchan pacíficamente por salario digno en Caracas'
+      },
+      'Zulia': {
+        name: 'Zulia',
+        capital: 'Maracaibo',
+        region: 'Occidente / Cuenca Lago',
+        newsCount: 11,
+        servicios: 7,
+        ddhh: 2,
+        politica: 1,
+        otros: 1,
+        media: ['El Pitazo', 'Noticia al Día', 'Foco Informativo', 'Radio Fe y Alegría'],
+        headline: 'Falla masiva en línea 230kV deja a oscuras a Maracaibo y San Francisco'
+      },
+      'Bolívar': {
+        name: 'Bolívar',
+        capital: 'Ciudad Bolívar / Puerto Ordaz',
+        region: 'Guayana',
+        newsCount: 9,
+        servicios: 3,
+        ddhh: 4,
+        politica: 1,
+        otros: 1,
+        media: ['Correo del Caroní', 'PROVEA', 'TalCual'],
+        headline: 'Comisiones de la DGCIM detienen sin orden a dirigente sindical en Puerto Ordaz'
+      },
+      'Táchira': {
+        name: 'Táchira',
+        capital: 'San Cristóbal',
+        region: 'Andes / Frontera',
+        newsCount: 8,
+        servicios: 4,
+        ddhh: 2,
+        politica: 1,
+        otros: 1,
+        media: ['Radio Fe y Alegría', 'La Nación', 'El Tiempo'],
+        headline: 'Colas por combustible se extienden en San Cristóbal y municipios de frontera'
+      },
+      'Miranda': {
+        name: 'Miranda',
+        capital: 'Los Teques',
+        region: 'Centro',
+        newsCount: 8,
+        servicios: 4,
+        ddhh: 2,
+        politica: 1,
+        otros: 1,
+        media: ['Diario La Región', 'El Tequeño', 'El Pitazo'],
+        headline: 'Comunidades de Valles del Tuy protestan por tres semanas sin suministro de agua'
+      },
+      'Carabobo': {
+        name: 'Carabobo',
+        capital: 'Valencia',
+        region: 'Centro',
+        newsCount: 7,
+        servicios: 3,
+        ddhh: 1,
+        politica: 1,
+        otros: 2,
+        media: ['El Carabobeño', 'Noticias 24 Carabobo'],
+        headline: 'Lluvias torrenciales desbordan quebradas en la autopista Valencia - Puerto Cabello'
+      },
+      'Lara': {
+        name: 'Lara',
+        capital: 'Barquisimeto',
+        region: 'Centro-Occidente',
+        newsCount: 6,
+        servicios: 3,
+        ddhh: 1,
+        politica: 1,
+        otros: 1,
+        media: ['El Impulso', 'Radio Fe y Alegría'],
+        headline: 'Comerciantes de Barquisimeto reportan sobrecostos por cortes eléctricos diarios'
+      },
+      'Anzoátegui': {
+        name: 'Anzoátegui',
+        capital: 'Barcelona',
+        region: 'Oriente',
+        newsCount: 6,
+        servicios: 2,
+        ddhh: 2,
+        politica: 1,
+        otros: 1,
+        media: ['El Tiempo de Anzoátegui', 'Impacto Venezuela'],
+        headline: 'Derrames de crudo en Lechería afectan faena de pescadores artesanales'
+      },
+      'Apure': {
+        name: 'Apure',
+        capital: 'San Fernando de Apure',
+        region: 'Llanos',
+        newsCount: 5,
+        servicios: 3,
+        ddhh: 1,
+        politica: 0,
+        otros: 1,
+        media: ['Crónica Uno', 'Radio Fe y Alegría'],
+        headline: 'Ganaderos en Achaguas advierten pérdidas de leche por escasez de combustible'
+      },
+      'Mérida': {
+        name: 'Mérida',
+        capital: 'Mérida',
+        region: 'Andes',
+        newsCount: 5,
+        servicios: 3,
+        ddhh: 1,
+        politica: 1,
+        otros: 0,
+        media: ['Comunicación Continua', 'El Pitazo'],
+        headline: 'Derrumbes en la vía Trasandina incomunican caseríos agrícolas en Timotes'
+      },
+      'Vargas / La Guaira': {
+        name: 'La Guaira (Vargas)',
+        capital: 'La Guaira',
+        region: 'Central Costera',
+        newsCount: 4,
+        servicios: 2,
+        ddhh: 0,
+        politica: 1,
+        otros: 1,
+        media: ['Diario La Región', 'La Verdad de Vargas'],
+        headline: 'Suspenden preventivamente zarpe de lanchas en Maiquetía por mar de fondo'
+      },
+      'Nueva Esparta': {
+        name: 'Nueva Esparta (Margarita)',
+        capital: 'La Asunción / Porlamar',
+        region: 'Insular',
+        newsCount: 3,
+        servicios: 2,
+        ddhh: 0,
+        politica: 1,
+        otros: 0,
+        media: ['El Sol de Margarita', 'Reporte Confidencial'],
+        headline: 'Sector hotelero de Porlamar solicita suministro continuo de agua ante temporada'
+      }
+    };
+
+    // BANDEJA DE SOLICITUDES DE ACREDITACIÓN (PARA EL PANEL DEL COORDINADOR / ADMIN)
+    let accreditationRequests = [
+      {
+        id: 'req_101',
+        fullName: 'Carlos Mendoza',
+        email: 'cmendoza@talcualdigital.com',
+        organization: 'TalCual Digital',
+        roleTitle: 'Periodista de Investigación y Servicios Públicos',
+        purpose: 'Investigación documental sobre apagones y colapso de bombas de agua en Zulia y Bolívar. Requerimos cruce multi-fuente de datos para reportaje especial.',
+        contactProofUrl: 'https://talcualdigital.com/autor/carlos-mendoza',
+        status: 'PENDING',
+        submittedAt: 'Hace 2 horas',
+        reviewedById: null,
+        reviewedAt: null,
+        rejectionReason: null
+      },
+      {
+        id: 'req_102',
+        fullName: 'Valeria Rodríguez',
+        email: 'vrodriguez@elpitazo.net',
+        organization: 'El Pitazo',
+        roleTitle: 'Corresponsal Regional en Táchira',
+        purpose: 'Monitoreo de violaciones de derechos humanos en frontera colombo-venezolana, detenciones arbitrarias e impacto en la libertad de prensa regional.',
+        contactProofUrl: 'https://elpitazo.net/corresponsales/valeria-rodriguez',
+        status: 'PENDING',
+        submittedAt: 'Hace 4 horas',
+        reviewedById: null,
+        reviewedAt: null,
+        rejectionReason: null
+      },
+      {
+        id: 'req_103',
+        fullName: 'Mariana Gómez',
+        email: 'mgomez@ucab.edu.ve',
+        organization: 'Centro de DDHH - UCAB / Medianálisis',
+        roleTitle: 'Investigadora Principal en Libertad de Expresión',
+        purpose: 'Mapeo analítico de bloqueos DNS a portales informativos para informe académico semestral presentado ante instancias internacionales.',
+        contactProofUrl: 'https://ucab.edu.ve/investigadores/mgomez',
+        status: 'PENDING',
+        submittedAt: 'Ayer, 16:45',
+        reviewedById: null,
+        reviewedAt: null,
+        rejectionReason: null
+      },
+      {
+        id: 'req_104',
+        fullName: 'Alejandro Bastidas',
+        email: 'abastidas@el-carabobeno.com',
+        organization: 'El Carabobeño',
+        roleTitle: 'Jefe de Redacción Región Central',
+        purpose: 'Seguimiento sistemático de fallas eléctricas y criminalización de reclamos laborales en la zona industrial de Carabobo y Aragua.',
+        contactProofUrl: 'https://el-carabobeno.com/equipo-editorial',
+        status: 'APPROVED',
+        submittedAt: '04 Oct 2026',
+        reviewedById: 'Coordinación Editorial',
+        reviewedAt: '04 Oct 2026',
+        rejectionReason: null
+      },
+      {
+        id: 'req_105',
+        fullName: 'Enrique Soto',
+        email: 'esoto_redes@gmail.com',
+        organization: 'Canal de TikTok Noticias Express',
+        roleTitle: 'Creador de Contenido',
+        purpose: 'Quiero descargar las bases de datos para hacer videos en redes sociales.',
+        contactProofUrl: '',
+        status: 'REJECTED',
+        submittedAt: '03 Oct 2026',
+        reviewedById: 'Coordinación Editorial',
+        reviewedAt: '03 Oct 2026',
+        rejectionReason: 'No se adjuntó portafolio verificable ni vinculación con medio o institución de investigación formal.'
+      }
+    ];
+
+    // CÓDIGOS DE INVITACIÓN DIRECTA EN CIRCULACIÓN
+    let activeInvitationCodes = [
+      { code: 'SNTP-VZLA-2026', organization: 'Sindicato Nacional de Trabajadores de la Prensa', maxUses: 15, usedCount: 6, isActive: true },
+      { code: 'PROVEA-ALLIED', organization: 'Red de Defensores de DDHH y ONGs', maxUses: 10, usedCount: 3, isActive: true },
+      { code: 'ESP-PUBLICO-2026', organization: 'Espacio Público / Veeduría Ciudadana', maxUses: 5, usedCount: 2, isActive: true },
+      { code: 'CNP-CARACAS', organization: 'Colegio Nacional de Periodistas (Seccional Caracas)', maxUses: 10, usedCount: 4, isActive: true }
+    ];
+
+    // Hechos consolidados multi-fuente
+    const multiSourceEventsData = [
+      {
+        clusterId: 'ev_1',
+        headline: 'Mega apagón en Maracaibo interrumpe bombeo de agua y paraliza comercios',
+        region: 'Zulia',
+        category: 'Servicios Públicos',
+        romeStatuteKey: null,
+        romeStatuteLabel: 'No Aplica / Servicios',
+        actors: [{ name: 'Corpoelec', category: 'Institución del Estado' }, { name: 'Hidrolago', category: 'Institución' }],
+        firstReportedAt: '2026-10-06T10:00:00Z',
+        sources: [
+          { sourceName: 'Efecto Cocuyo', sourceType: 'RSS', sourceUrl: 'https://efectococuyo.com/apagon-zulia', title: 'Falla masiva en línea 230kV deja a oscuras a Maracaibo y San Francisco', publishedAt: '2026-10-06T10:00:00Z' },
+          { sourceName: 'Noticia al Día', sourceType: 'Regional', sourceUrl: 'https://noticiaaldia.com/apagon', title: 'Maracaibo sin luz: 5 municipios afectados', publishedAt: '2026-10-06T10:15:00Z' },
+          { sourceName: 'El Pitazo', sourceType: 'RSS', sourceUrl: 'https://elpitazo.net/apagon-occidente', title: 'Zulia cumple 12 horas consecutivas sin servicio eléctrico ni agua', publishedAt: '2026-10-06T11:00:00Z' }
+        ]
+      },
+      {
+        clusterId: 'ev_2',
+        headline: 'Comisiones de la DGCIM detienen arbitrariamente a dirigente sindical en Bolívar',
+        region: 'Bolívar',
+        category: 'Derechos Humanos y Medios',
+        romeStatuteKey: 'DETENCION_ARBITRARIA',
+        romeStatuteLabel: 'Detención Arbitraria (Art. 7.1.e)',
+        actors: [{ name: 'DGCIM', category: 'Cuerpo de Seguridad' }, { name: 'PROVEA', category: 'Sociedad Civil' }],
+        firstReportedAt: '2026-10-06T11:30:00Z',
+        sources: [
+          { sourceName: 'PROVEA', sourceType: 'RSS', sourceUrl: 'https://provea.org/alerta-dgcim', title: 'Alerta urgente: DGCIM detiene sin orden a trabajador de empresas básicas', publishedAt: '2026-10-06T11:30:00Z' },
+          { sourceName: 'Correo del Caroní', sourceType: 'RSS', sourceUrl: 'https://correodelcaroni.com/sidor-detencion', title: 'Familiares exigen conocer paradero de sindicalista apresado', publishedAt: '2026-10-06T12:15:00Z' }
+        ]
+      },
+      {
+        clusterId: 'ev_3',
+        headline: 'Docentes y personal de salud marchan pacíficamente por salario digno en Caracas',
+        region: 'Caracas',
+        category: 'Economía y Laboral',
+        romeStatuteKey: 'PROTESTA_PACIFICA',
+        romeStatuteLabel: 'Protesta y Manifestación Pacífica',
+        actors: [{ name: 'PNB', category: 'Cuerpo de Seguridad' }, { name: 'Gremios Docentes', category: 'Sociedad Civil' }],
+        firstReportedAt: '2026-10-06T09:00:00Z',
+        sources: [
+          { sourceName: 'Crónica Uno', sourceType: 'RSS', sourceUrl: 'https://cronica.uno/marcha-docente-caracas', title: 'Maestros desafían piquete de la PNB y concentran reclamos salariales', publishedAt: '2026-10-06T09:00:00Z' },
+          { sourceName: 'TalCual', sourceType: 'RSS', sourceUrl: 'https://talcualdigital.com/salarios-caracas', title: 'Concentración de educadores en centro de Caracas exige indexación salarial', publishedAt: '2026-10-06T09:30:00Z' }
+        ]
+      }
+    ];
+
+    // Datos del radar de fact-checking
+    const factChecksData = [
+      {
+        id: 'fc_1',
+        claim: 'Cadena de WhatsApp asegura entrega de bono extraordinario de $500 dólares por el Sistema Patria en octubre 2026',
+        verdict: 'FALSO',
+        explanation: 'Ni el blog oficial de Patria ni canales institucionales han anunciado tal subsidio. El enlace adjunto es phishing para robar credenciales bancarias.',
+        factCheckerSource: 'Venezuela Verifica',
+        sourceUrl: 'https://venezuelaverifica.org/desmentido-bono-falso-2026',
+        debunkedAt: '2026-10-06T11:00:00Z'
+      },
+      {
+        id: 'fc_2',
+        claim: 'Video en redes muestra supuesto colapso del Puente sobre el Lago de Maracaibo tras fuertes vientos',
+        verdict: 'MANIPULADO',
+        explanation: 'Las imágenes corresponden al colapso de un puente en Taiwán en el año 2019. El paso por el Puente General Rafael Urdaneta se encuentra abierto y operativo.',
+        factCheckerSource: 'Cazadores de Fake News',
+        sourceUrl: 'https://cazadoresdefakenews.info/puente-lago-falso-2026',
+        debunkedAt: '2026-10-05T16:30:00Z'
+      },
+      {
+        id: 'fc_3',
+        claim: 'Afirman que el CNE eliminó automáticamente del Registro Electoral a los votantes mayores de 60 años en el estado Táchira',
+        verdict: 'FALSO',
+        explanation: 'Organizaciones de veeduría electoral y el cronograma oficial desmienten la exclusión por edad.',
+        factCheckerSource: 'EsPaja',
+        sourceUrl: 'https://espaja.com/desmentido-registro-electoral-tachira',
+        debunkedAt: '2026-10-04T14:20:00Z'
+      }
+    ];
+
+    function toggleQuickRoleSwitcher() {
+      document.getElementById('role-switcher').classList.toggle('hidden');
+    }
+
+    function setRole(role) {
+      currentRole = role;
+      updateRoleUI();
+      renderLiveScrollFeed();
+      filtrarEventosMultiFuente();
+      filtrarFactChecks();
+
+      // Si se pasa a Admin, mostramos la vista admin en acreditaciones
+      if (role === 'ADMIN') {
+        cambiarModoAcreditacion('ADMIN');
+      }
+    }
+
+    function updateRoleUI() {
+      const badge = document.getElementById('user-badge');
+      const lockBanner = document.getElementById('analytics-lock-banner');
+      const analyticsContent = document.getElementById('analytics-content');
+
+      badge.className = 'px-2.5 py-1 rounded-full text-xs font-semibold ';
+      if (currentRole === 'PUBLIC') {
+        badge.innerText = 'Público (Anónimo)';
+        badge.classList.add('badge-public');
+      } else if (currentRole === 'REGISTERED') {
+        badge.innerText = 'Registrado (Lector)';
+        badge.classList.add('badge-registered');
+      } else if (currentRole === 'VERIFIED') {
+        badge.innerText = '✓ Periodista Verificado';
+        badge.classList.add('badge-verified');
+      } else if (currentRole === 'ADMIN') {
+        badge.innerText = '★ Coordinador / Admin';
+        badge.classList.add('bg-purple-100', 'text-purple-800', 'border', 'border-purple-300');
+      }
+
+      if (currentRole === 'VERIFIED' || currentRole === 'ADMIN') {
+        lockBanner.classList.add('hidden');
+        analyticsContent.classList.remove('hidden');
+      } else {
+        lockBanner.classList.remove('hidden');
+        analyticsContent.classList.add('hidden');
+      }
+    }
+
+    function showTab(tabId) {
+      const views = ['portada', 'mapa', 'analitica', 'desinformacion', 'buscador', 'medios', 'acceso'];
+      views.forEach(v => {
+        const viewEl = document.getElementById('view-' + v);
+        if (viewEl) viewEl.classList.add('hidden');
+        const btn = document.getElementById('tab-' + v);
+        if (btn) btn.className = 'px-3.5 py-2 font-medium text-sm rounded-lg transition-colors text-slate-600 hover:bg-white shrink-0';
+        
+        const mBtn = document.getElementById('m-tab-' + v);
+        if (mBtn) {
+          mBtn.className = 'flex flex-col items-center justify-center text-slate-500 font-medium text-[10px] space-y-0.5';
+        }
+      });
+
+      const activeView = document.getElementById('view-' + tabId);
+      if (activeView) activeView.classList.remove('hidden');
+      const activeBtn = document.getElementById('tab-' + tabId);
+      if (activeBtn) activeBtn.className = 'px-3.5 py-2 font-medium text-sm rounded-lg transition-colors bg-white shadow-sm text-blue-600 border border-slate-200 shrink-0';
+
+      const activeMBtn = document.getElementById('m-tab-' + tabId);
+      if (activeMBtn) {
+        activeMBtn.className = 'flex flex-col items-center justify-center text-blue-600 font-bold text-[10px] space-y-0.5';
+      }
+
+      if (tabId === 'portada') renderLiveScrollFeed();
+      if (tabId === 'mapa') updateMapDetailsPanel('Caracas');
+      if (tabId === 'analitica') filtrarEventosMultiFuente();
+      if (tabId === 'desinformacion') filtrarFactChecks();
+      if (tabId === 'medios') renderDirectorioMedios();
+      if (tabId === 'acceso') {
+        renderizarSolicitudesAcreditacion();
+        renderizarCodigosInvitacion();
+    ejecutarBusquedaAvanzada();
+    // Intento de rastreo en vivo inicial al abrir la página
+    setTimeout(buscarNoticiasInternetEnVivo, 1500);
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ==========================================
+    // INTERACCIÓN Y CONTROL DEL MAPA DE VENEZUELA
+    // ==========================================
+    function seleccionarRegionMapa(region) {
+      if (region === 'ALL') {
+        limpiarFiltroRegionMapa();
+        return;
+      }
+
+      activeRegionFilter = region;
+      
+      // Resaltar visualmente en mapa SVG
+      document.querySelectorAll('.map-state').forEach(el => el.classList.remove('active'));
+      const stateEl = document.getElementById('state-' + region.replace(/[^a-zA-Z]/g, ''));
+      if (stateEl) stateEl.classList.add('active');
+
+      // Actualizar selector dropdown
+      const selectEl = document.getElementById('state-select-dropdown');
+      if (selectEl) selectEl.value = region;
+
+      // Actualizar Ficha de Información de Estado
+      updateMapDetailsPanel(region);
+
+      // Actualizar barra de filtro activo en portada
+      const filterBar = document.getElementById('active-region-filter-bar');
+      const filterName = document.getElementById('active-region-name');
+      const filterCount = document.getElementById('active-region-count');
+      if (filterBar) {
+        filterBar.classList.remove('hidden');
+        filterName.innerText = region;
+        const count = feedNews.filter(n => n.region === region).length;
+        filterCount.innerText = `(${count} reportes encontrados)`;
+      }
+
+      renderLiveScrollFeed();
+    }
+
+    function updateMapDetailsPanel(region) {
+      const data = statesMapData[region] || {
+        name: region,
+        capital: 'Capital Regional',
+        region: 'Zona Geográfica',
+        newsCount: 4,
+        servicios: 2,
+        ddhh: 1,
+        politica: 1,
+        otros: 0,
+        media: ['Radio Fe y Alegría', 'El Pitazo'],
+        headline: 'Reportes de monitoreo en desarrollo para ' + region
+      };
+
+      document.getElementById('panel-state-name').innerText = data.name;
+      document.getElementById('panel-state-capital').innerText = `Capital: ${data.capital} • ${data.region}`;
+      document.getElementById('state-news-badge').innerText = `${data.newsCount} reportes`;
+      
+      document.getElementById('stat-state-servicios').innerText = `${data.servicios} casos`;
+      document.getElementById('stat-state-ddhh').innerText = `${data.ddhh} casos`;
+      document.getElementById('stat-state-politica').innerText = `${data.politica} casos`;
+      document.getElementById('stat-state-otros').innerText = `${data.otros} casos`;
+
+      document.getElementById('panel-state-headline').innerText = `"${data.headline}"`;
+
+      const mediaContainer = document.getElementById('panel-state-media');
+      mediaContainer.innerHTML = data.media.map(m => `
+        <span class="bg-slate-200 text-slate-800 px-2 py-0.5 rounded font-medium">${m}</span>
+      `).join('');
+    }
+
+    function aplicarFiltroEstadoDesdeMapa() {
+      showTab('portada');
+      window.scrollTo({ top: 350, behavior: 'smooth' });
+    }
+
+    function limpiarFiltroRegionMapa() {
+      activeRegionFilter = 'ALL';
+      document.querySelectorAll('.map-state').forEach(el => el.classList.remove('active'));
+      const filterBar = document.getElementById('active-region-filter-bar');
+      if (filterBar) filterBar.classList.add('hidden');
+      const selectEl = document.getElementById('state-select-dropdown');
+      if (selectEl) selectEl.value = 'ALL';
+      renderLiveScrollFeed();
+    }
+
+    function filtrarCapaMapa(category) {
+      const buttons = ['all', 'servicios', 'ddhh'];
+      buttons.forEach(b => {
+        const btn = document.getElementById('layer-btn-' + b);
+        if (btn) btn.className = 'px-2.5 py-1 rounded text-slate-600 hover:text-slate-900';
+      });
+      const activeBtn = document.getElementById('layer-btn-' + category.toLowerCase());
+      if (activeBtn) activeBtn.className = 'px-2.5 py-1 rounded bg-white font-bold text-blue-600 shadow-xs';
+    }
+
+    function zoomMap(factor) {
+      currentMapZoom = Math.max(0.7, Math.min(2.2, currentMapZoom * factor));
+      const svg = document.getElementById('venezuela-svg-map');
+      if (svg) svg.style.transform = `scale(${currentMapZoom})`;
+      if (svg) svg.style.transformOrigin = 'center center';
+    }
+
+    function resetMapZoom() {
+      currentMapZoom = 1;
+      const svg = document.getElementById('venezuela-svg-map');
+      if (svg) svg.style.transform = 'scale(1)';
+    }
+
+    // ==========================================
+    // FEED CONTINUO CON SCROLL Y APERTURA CURADA
+    // ==========================================
+    function renderLiveScrollFeed() {
+      const container = document.getElementById('live-scroll-feed');
+      const counterEl = document.getElementById('live-feed-counter');
+      if (!container) return;
+
+      let filtered = activeRegionFilter === 'ALL'
+        ? feedNews
+        : feedNews.filter(n => n.region === activeRegionFilter);
+
+      if (currentQuickFeedQuery) {
+        filtered = filtered.filter(n => {
+          const t = (n.title + ' ' + (n.snippet || '') + ' ' + n.sourceName + ' ' + n.region).toLowerCase();
+          return t.includes(currentQuickFeedQuery);
+        });
+      }
+
+      if (counterEl) counterEl.innerText = `${filtered.length} notas`;
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-8 text-xs text-slate-400 bg-white rounded-xl border border-slate-200 p-4">
+            No se encontraron reportes en ${activeRegionFilter}.
+            <div class="mt-2">
+              <button onclick="limpiarFiltroRegionMapa()" class="text-blue-600 font-bold hover:underline">Ver todos los estados</button>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(item => {
+        const timeAgo = new Date(item.publishedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `
+          <article class="bg-white rounded-xl border border-slate-200 p-3.5 shadow-xs hover:border-slate-300 transition-all space-y-2">
+            <div class="flex items-center justify-between text-[11px]">
+              <div class="flex items-center space-x-1.5">
+                <span class="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded text-[10px]">${item.sourceName}</span>
+                <span class="text-slate-400">• ${timeAgo}</span>
+              </div>
+              <span class="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">📍 ${item.region}</span>
+            </div>
+
+            <h4 class="text-xs font-bold text-slate-900 leading-snug hover:text-blue-600 cursor-pointer">
+              <a href="${item.sourceUrl}" target="_blank">${item.title}</a>
+            </h4>
+            <p class="text-[11px] text-slate-600 line-clamp-2 leading-relaxed">${item.snippet}</p>
+
+            <div class="flex items-center justify-between pt-1.5 border-t border-slate-50 text-[10px]">
+              <span class="text-slate-400 font-medium">${item.category}</span>
+              <a href="${item.sourceUrl}" target="_blank" class="text-blue-600 font-semibold hover:underline">
+                Ver fuente ↗
+              </a>
+            </div>
+          </article>
+        `;
+      }).join('');
+
+      renderCuratedHeadlines();
+    }
+
+    function renderCuratedHeadlines() {
+      const container = document.getElementById('homepage-curated-container');
+      if (!container) return;
+
+      const main = feedNews[0];
+      const second = feedNews[1];
+
+      container.innerHTML = `
+        <article class="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded">
+              ⭐ APERTURA NACIONAL • ${main.category}
+            </span>
+            <span class="text-slate-500 font-bold">📍 ${main.region}</span>
+          </div>
+          <h3 class="text-lg md:text-xl font-black text-slate-900 leading-snug">
+            <a href="${main.sourceUrl}" target="_blank" class="hover:text-blue-600">${main.title}</a>
+          </h3>
+          <p class="text-xs text-slate-600 leading-relaxed">${main.snippet}</p>
+          <div class="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
+            <span>Fuente verificada: <strong class="text-slate-700">${main.sourceName}</strong></span>
+            <div class="flex items-center space-x-2">
+              <span class="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded text-[11px]">✓ Verificado</span>
+              <a href="${main.sourceUrl}" target="_blank" class="text-blue-600 hover:underline text-[11px] font-semibold">Leer investigación ↗</a>
+            </div>
+          </div>
+        </article>
+
+        <article class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded text-[11px]">${second.category}</span>
+            <span class="text-slate-500 text-[11px] font-bold">📍 ${second.region}</span>
+          </div>
+          <h4 class="text-sm font-bold text-slate-900 leading-snug">
+            <a href="${second.sourceUrl}" target="_blank" class="hover:text-blue-600">${second.title}</a>
+          </h4>
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span>Medio: ${second.sourceName}</span>
+            <a href="${second.sourceUrl}" target="_blank" class="text-blue-600 font-semibold hover:underline">Ver detalle ↗</a>
+          </div>
+        </article>
+      `;
+    }
+
+    function cargarMasNoticias() {
+      const extraNews = [
+        {
+          id: 'fn_' + Date.now() + '_1',
+          title: 'El Tiempo publica balance sobre comercio transfronterizo en puentes de San Antonio y Ureña',
+          snippet: 'Transportistas de carga pesada denuncian demoras burocráticas en aduanas bilaterales de Táchira.',
+          sourceName: 'El Tiempo',
+          sourceType: 'Internacional',
+          sourceUrl: 'https://eltiempo.com/tachira-frontera',
+          region: 'Táchira',
+          category: 'Economía y Laboral',
+          publishedAt: new Date().toISOString()
+        },
+        {
+          id: 'fn_' + Date.now() + '_2',
+          title: 'Noticia al Día: Reparación de tubería matriz en San Francisco tardará 48 horas adicionales',
+          snippet: 'Hidrolago y cuadrillas técnicas reemplazan válvulas dañadas tras sobrepresión en la línea principal.',
+          sourceName: 'Noticia al Día',
+          sourceType: 'Regional',
+          sourceUrl: 'https://noticiaaldia.com/san-francisco-agua',
+          region: 'Zulia',
+          category: 'Servicios Públicos',
+          publishedAt: new Date().toISOString()
+        }
+      ];
+
+      feedNews.push(...extraNews);
+      renderLiveScrollFeed();
+    }
+
+    // ========================================================
+    // MÓDULO DE ACREDITACIONES: CÓMO LAS VEO, GESTIONO Y APRUEBO
+    // ========================================================
+    function cambiarModoAcreditacion(mode) {
+      currentAccreditationMode = mode;
+      const applicantView = document.getElementById('acceso-view-applicant');
+      const adminView = document.getElementById('acceso-view-admin');
+      const btnApplicant = document.getElementById('btn-modo-applicant');
+      const btnAdmin = document.getElementById('btn-modo-admin');
+
+      if (mode === 'ADMIN') {
+        applicantView.classList.add('hidden');
+        adminView.classList.remove('hidden');
+        btnAdmin.className = 'flex-1 py-2 px-3 rounded-xl font-bold text-xs text-purple-700 bg-purple-50 border border-purple-200 transition-all flex items-center justify-center space-x-1.5';
+        btnApplicant.className = 'flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 hover:bg-slate-50 transition-all';
+        renderizarSolicitudesAcreditacion();
+        renderizarCodigosInvitacion();
+      } else {
+        applicantView.classList.remove('hidden');
+        adminView.classList.add('hidden');
+        btnApplicant.className = 'flex-1 py-2 px-3 rounded-xl font-bold text-xs text-blue-700 bg-blue-50 border border-blue-200 transition-all';
+        btnAdmin.className = 'flex-1 py-2 px-3 rounded-xl font-bold text-xs text-slate-600 hover:bg-slate-50 transition-all flex items-center justify-center space-x-1.5';
+      }
+    }
+
+    function filtrarSolicitudesStatus(status) {
+      currentRequestsFilter = status;
+      const statuses = ['pending', 'approved', 'rejected', 'all'];
+      statuses.forEach(s => {
+        const btn = document.getElementById('status-btn-' + s);
+        if (btn) btn.className = 'px-3 py-1.5 rounded-md text-slate-600 hover:text-slate-900 font-medium';
+      });
+
+      const activeBtn = document.getElementById('status-btn-' + status.toLowerCase());
+      if (activeBtn) {
+        activeBtn.className = 'px-3 py-1.5 rounded-md font-bold text-purple-900 bg-white shadow-xs';
+      }
+
+      renderizarSolicitudesAcreditacion();
+    }
+
+    function renderizarSolicitudesAcreditacion() {
+      const container = document.getElementById('accreditation-requests-container');
+      if (!container) return;
+
+      const searchQ = (document.getElementById('requests-search-input')?.value || '').toLowerCase().trim();
+
+      const pendingCount = accreditationRequests.filter(r => r.status === 'PENDING').length;
+      const approvedCount = accreditationRequests.filter(r => r.status === 'APPROVED').length;
+      const rejectedCount = accreditationRequests.filter(r => r.status === 'REJECTED').length;
+
+      // Actualizar contadores
+      document.getElementById('metric-pending-count').innerText = pendingCount;
+      document.getElementById('metric-approved-count').innerText = approvedCount;
+      document.getElementById('metric-rejected-count').innerText = rejectedCount;
+      document.getElementById('admin-badge-count').innerText = pendingCount;
+      document.getElementById('tab-pending-badge').innerText = pendingCount;
+      document.getElementById('nav-pending-badge').innerText = pendingCount;
+
+      const filtered = accreditationRequests.filter(r => {
+        if (currentRequestsFilter !== 'ALL' && r.status !== currentRequestsFilter) return false;
+        if (searchQ) {
+          const text = (r.fullName + ' ' + r.organization + ' ' + r.roleTitle + ' ' + r.email).toLowerCase();
+          if (!text.includes(searchQ)) return false;
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-400 space-y-2">
+            <span class="text-2xl">📭</span>
+            <p>No hay solicitudes en esta categoría.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(req => {
+        let statusBadge = '';
+        let actionButtons = '';
+
+        if (req.status === 'PENDING') {
+          statusBadge = '<span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">⏳ Pendiente de Aprobación</span>';
+          actionButtons = `
+            <div class="flex items-center space-x-2 pt-2 border-t border-slate-100">
+              <button onclick="aprobarSolicitud('${req.id}')" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center space-x-1 shadow-xs">
+                <span>✓ Aprobar Acreditación</span>
+              </button>
+              <button onclick="abrirModalRechazo('${req.id}')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold transition-colors">
+                <span>✕ Rechazar</span>
+              </button>
+            </div>
+          `;
+        } else if (req.status === 'APPROVED') {
+          statusBadge = '<span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">✓ Aprobado (Acreditado)</span>';
+          actionButtons = `
+            <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+              <span>Aprobado por: <strong class="text-slate-700">${req.reviewedById || 'Coordinación'}</strong> (${req.reviewedAt || 'Reciente'})</span>
+              <button onclick="desautorizarSolicitud('${req.id}')" class="text-xs text-red-600 hover:underline">Revocar acceso</button>
+            </div>
+          `;
+        } else if (req.status === 'REJECTED') {
+          statusBadge = '<span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">✕ Denegada</span>';
+          actionButtons = `
+            <div class="p-2.5 bg-red-50 border border-red-100 rounded-lg text-[11px] text-red-700 mt-2">
+              <strong>Motivo de rechazo:</strong> ${req.rejectionReason || 'No especificado'}
+            </div>
+            <div class="flex justify-end pt-1">
+              <button onclick="reconsiderarSolicitud('${req.id}')" class="text-[11px] text-blue-600 font-semibold hover:underline">Reconsiderar para revisión</button>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs hover:border-slate-300 transition-all space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-xs">
+                  ${req.fullName.split(' ').map(n=>n[0]).slice(0,2).join('')}
+                </div>
+                <div>
+                  <h4 class="text-sm font-bold text-slate-900 flex items-center space-x-2">
+                    <span>${req.fullName}</span>
+                    <span class="text-xs font-normal text-slate-500">• ${req.email}</span>
+                  </h4>
+                  <p class="text-xs text-slate-600 font-medium">
+                    <strong class="text-slate-800">${req.organization}</strong> — ${req.roleTitle}
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center space-x-2">
+                <span class="text-[10px] text-slate-400 font-mono">${req.submittedAt}</span>
+                ${statusBadge}
+              </div>
+            </div>
+
+            <!-- Justificación y Propósito -->
+            <div class="bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs text-slate-700 space-y-1">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Propósito de Investigación</span>
+              <p class="leading-relaxed">"${req.purpose}"</p>
+            </div>
+
+            <!-- Credenciales y Verificación -->
+            ${req.contactProofUrl ? `
+              <div class="flex items-center space-x-2 text-xs">
+                <span class="text-slate-400 text-[11px]">Credencial / Portafolio:</span>
+                <a href="${req.contactProofUrl}" target="_blank" class="text-blue-600 font-semibold hover:underline flex items-center space-x-1">
+                  <span>${req.contactProofUrl}</span>
+                  <span>↗</span>
+                </a>
+              </div>
+            ` : ''}
+
+            <!-- Botones de Acción -->
+            ${actionButtons}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // ACCIONES DE APROBACIÓN Y RECHAZO
+    function aprobarSolicitud(id) {
+      const req = accreditationRequests.find(r => r.id === id);
+      if (!req) return;
+
+      req.status = 'APPROVED';
+      req.reviewedById = 'Coordinador Editorial (Tú)';
+      req.reviewedAt = 'Ahora mismo';
+
+      renderizarSolicitudesAcreditacion();
+      
+      alert(`¡Acreditación APROBADA con éxito para ${req.fullName} (${req.organization})!
+El usuario ha sido promovido al rol 'VERIFIED' y ya tiene acceso completo a la base de datos de DDHH.`);
+    }
+
+    function abrirModalRechazo(id) {
+      document.getElementById('reject-request-id').value = id;
+      document.getElementById('reject-reason').value = '';
+      document.getElementById('reject-modal').classList.remove('hidden');
+    }
+
+    function cerrarModalRechazo() {
+      document.getElementById('reject-modal').classList.add('hidden');
+    }
+
+    function confirmarRechazoSolicitud() {
+      const id = document.getElementById('reject-request-id').value;
+      const reason = document.getElementById('reject-reason').value.trim() || 'No cumplió con los requerimientos gremiales de verificación.';
+      
+      const req = accreditationRequests.find(r => r.id === id);
+      if (req) {
+        req.status = 'REJECTED';
+        req.reviewedById = 'Coordinación';
+        req.reviewedAt = 'Ahora mismo';
+        req.rejectionReason = reason;
+      }
+
+      cerrarModalRechazo();
+      renderizarSolicitudesAcreditacion();
+    }
+
+    function desautorizarSolicitud(id) {
+      const req = accreditationRequests.find(r => r.id === id);
+      if (req && confirm(`¿Deseas revocar la acreditación de ${req.fullName}?`)) {
+        req.status = 'REJECTED';
+        req.rejectionReason = 'Acreditación revocada por el equipo de coordinación.';
+        renderizarSolicitudesAcreditacion();
+      }
+    }
+
+    function reconsiderarSolicitud(id) {
+      const req = accreditationRequests.find(r => r.id === id);
+      if (req) {
+        req.status = 'PENDING';
+        req.rejectionReason = null;
+        renderizarSolicitudesAcreditacion();
+      }
+    }
+
+    // GESTIÓN DE CÓDIGOS DE INVITACIÓN
+    function renderizarCodigosInvitacion() {
+      const container = document.getElementById('active-invitation-codes-list');
+      if (!container) return;
+
+      document.getElementById('metric-codes-count').innerText = activeInvitationCodes.length;
+
+      container.innerHTML = activeInvitationCodes.map(c => `
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-mono font-bold text-xs bg-white text-purple-900 border border-purple-200 px-2 py-0.5 rounded">
+              ${c.code}
+            </span>
+            <span class="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">Activo</span>
+          </div>
+          <p class="text-xs font-semibold text-slate-800 line-clamp-1">${c.organization}</p>
+          <div class="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+            <span>Usos: <strong>${c.usedCount}</strong> de ${c.maxUses} periodistas</span>
+            <button onclick="copiarCodigo('${c.code}')" class="text-blue-600 font-bold hover:underline">Copiar 📋</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function copiarCodigo(code) {
+      navigator.clipboard.writeText(code).then(() => {
+        alert('Código ' + code + ' copiado al portapapeles.');
+      }).catch(() => {
+        alert('Código: ' + code);
+      });
+    }
+
+    function abrirModalNuevoCodigo() {
+      document.getElementById('new-code-modal').classList.remove('hidden');
+    }
+
+    function cerrarModalNuevoCodigo() {
+      document.getElementById('new-code-modal').classList.add('hidden');
+    }
+
+    function guardarNuevoCodigo(e) {
+      e.preventDefault();
+      const org = document.getElementById('new-code-org').value.trim();
+      let codeVal = document.getElementById('new-code-value').value.trim().toUpperCase();
+      const limit = parseInt(document.getElementById('new-code-limit').value, 10) || 5;
+
+      if (!codeVal) {
+        const cleanOrg = org.replace(/[^a-zA-Z]/g, '').slice(0, 8).toUpperCase();
+        codeVal = `${cleanOrg}-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      }
+
+      activeInvitationCodes.unshift({
+        code: codeVal,
+        organization: org,
+        maxUses: limit,
+        usedCount: 0,
+        isActive: true
+      });
+
+      cerrarModalNuevoCodigo();
+      renderizarCodigosInvitacion();
+      alert(`¡Código de invitación ${codeVal} generado con éxito para ${org}!`);
+      e.target.reset();
+    }
+
+    // FORMULARIO DE POSTULACIÓN DE PERIODISTAS (SE CONECTA CON LA BANDEJA DEL ADMIN)
+    function enviarFormulario(e) {
+      e.preventDefault();
+      const fullName = document.getElementById('form-name').value.trim();
+      const employmentType = document.getElementById('form-type')?.value || 'Medio Contratado';
+      const organization = document.getElementById('form-org').value.trim();
+      const roleTitle = document.getElementById('form-role').value.trim();
+      const email = document.getElementById('form-email').value.trim();
+      const purpose = document.getElementById('form-purpose').value.trim();
+      const contactProofUrl = document.getElementById('form-proof').value.trim();
+
+      const newReq = {
+        id: 'req_' + Date.now(),
+        fullName,
+        email,
+        employmentType,
+        organization,
+        roleTitle,
+        purpose,
+        contactProofUrl,
+        status: 'PENDING',
+        submittedAt: 'Justo ahora',
+        reviewedById: null,
+        reviewedAt: null,
+        rejectionReason: null
+      };
+
+      accreditationRequests.unshift(newReq);
+
+      const feedback = document.getElementById('form-feedback');
+      feedback.classList.remove('hidden');
+      feedback.className = 'text-xs p-2.5 rounded-lg font-medium bg-blue-50 text-blue-800 border border-blue-200';
+      feedback.innerHTML = `
+        ✓ ¡Solicitud registrada exitosamente! Se ha remitido a la Bandeja de Coordinación.<br>
+        <button onclick="cambiarModoAcreditacion('ADMIN')" class="mt-1 font-bold underline text-blue-900">
+          👉 Ver tu solicitud en el Panel de Aprobaciones
+        </button>
+      `;
+
+      if (currentRole === 'PUBLIC') setRole('REGISTERED');
+      e.target.reset();
+    }
+
+    
+    function descargarAcreditacionesExcel() {
+      let csvContent = "\uFEFFID_Solicitud,Nombre_Completo,Correo_Electronico,Tipo_Vinculacion,Medio_u_Organizacion,Cargo_o_Funcion,Estado_Acreditacion,Fecha_Solicitud,Revisado_Por,Proposito_Investigacion,Credencial_URL\r\n";
+      accreditationRequests.forEach(req => {
+        const empType = req.employmentType || (
+          req.organization.toLowerCase().includes('freelance') || 
+          req.organization.toLowerCase().includes('independiente') || 
+          req.organization.toLowerCase().includes('tiktok') ? 'Freelance / Independiente' : 'Medio Contratado'
+        );
+        const row = [
+          `"${req.id}"`,
+          `"${(req.fullName || '').replace(/"/g, '""')}"`,
+          `"${(req.email || '').replace(/"/g, '""')}"`,
+          `"${empType}"`,
+          `"${(req.organization || '').replace(/"/g, '""')}"`,
+          `"${(req.roleTitle || '').replace(/"/g, '""')}"`,
+          `"${req.status}"`,
+          `"${req.submittedAt}"`,
+          `"${(req.reviewedById || 'Pendiente').replace(/"/g, '""')}"`,
+          `"${(req.purpose || '').replace(/"/g, '""')}"`,
+          `"${(req.contactProofUrl || '').replace(/"/g, '""')}"`
+        ];
+        csvContent += row.join(',') + "\r\n";
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", "registro_acreditaciones_periodistas.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function canjearCodigo() {
+      const codeInput = document.getElementById('input-code').value.trim().toUpperCase();
+      const feedback = document.getElementById('code-feedback');
+      feedback.classList.remove('hidden');
+
+      const found = activeInvitationCodes.find(c => c.code === codeInput);
+      if (found) {
+        found.usedCount = Math.min(found.maxUses, found.usedCount + 1);
+        feedback.className = 'text-xs p-2.5 rounded-lg font-medium bg-emerald-50 text-emerald-800 border border-emerald-200';
+        feedback.innerText = `¡Código aceptado para ${found.organization}! Cuenta promovida a Periodista Verificado.`;
+        setRole('VERIFIED');
+        setTimeout(() => {
+          showTab('analitica');
+        }, 900);
+      } else {
+        feedback.className = 'text-xs p-2.5 rounded-lg font-medium bg-red-50 text-red-700 border border-red-200';
+        feedback.innerText = 'Código no encontrado o no activo.';
+      }
+    }
+
+    // ==========================================
+    // DIRECTORIO DE MEDIOS (56 FUENTES)
+    // ==========================================
+    function renderDirectorioMedios() {
+      const container = document.getElementById('media-directory-grid');
+      if (!container) return;
+
+      const q = (document.getElementById('directory-search')?.value || '').toLowerCase().trim();
+
+      const filtered = allSourcesData.filter(s => {
+        if (!q) return true;
+        return s.name.toLowerCase().includes(q) || s.type.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
+      });
+
+      container.innerHTML = filtered.map(s => `
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col justify-between hover:border-slate-300 transition-colors">
+          <div class="space-y-1">
+            <div class="flex items-center justify-between text-[10px]">
+              <span class="font-bold px-1.5 py-0.5 rounded ${s.category === 'Verificador' ? 'bg-red-100 text-red-800' : (s.category === 'Organización' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800')}">
+                ${s.category}
+              </span>
+              <span class="text-slate-400 font-mono">Coste: $0</span>
+            </div>
+            <h4 class="text-xs font-bold text-slate-900">${s.name}</h4>
+            <p class="text-[11px] text-slate-500">${s.type}</p>
+          </div>
+          <div class="pt-2 mt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+            <a href="${s.url}" target="_blank" class="text-blue-600 hover:underline font-semibold flex items-center space-x-1">
+              <span>Sitio web</span>
+              <span>↗</span>
+            </a>
+            <span class="text-emerald-600 text-[10px] font-bold">● Rastreando</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function filtrarDirectorioMedios() {
+      renderDirectorioMedios();
+    }
+
+    // ==========================================
+    // MULTI-FUENTE Y DDHH
+    // ==========================================
+    function filtrarEventosMultiFuente() {
+      const q = (document.getElementById('multi-search-input')?.value || '').trim().toLowerCase();
+      const actorFilter = document.getElementById('multi-actor-filter')?.value || 'ALL';
+      const romeFilter = document.getElementById('multi-rome-filter')?.value || 'ALL';
+
+      const filtered = multiSourceEventsData.filter(ev => {
+        if (romeFilter !== 'ALL' && ev.romeStatuteKey !== romeFilter) return false;
+        if (actorFilter !== 'ALL' && !ev.actors.some(a => a.name.toLowerCase() === actorFilter.toLowerCase())) return false;
+        if (q) {
+          const fullText = (ev.headline + ' ' + ev.region + ' ' + ev.actors.map(a => a.name).join(' ')).toLowerCase();
+          if (!fullText.includes(q)) return false;
+        }
+        return true;
+      });
+
+      const container = document.getElementById('multi-source-results-container');
+      if (!container) return;
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-xl border border-slate-200">No se encontraron eventos coincidentes.</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(ev => {
+        const romeBadge = ev.romeStatuteKey ? `
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-red-100 text-red-900 border border-red-200">
+            ⚖️ ${ev.romeStatuteLabel}
+          </span>
+        ` : '';
+
+        const actorsBadges = ev.actors.map(act => `
+          <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
+            👤 ${act.name} (${act.category})
+          </span>
+        `).join(' ');
+
+        return `
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 hover:border-slate-300 transition-all">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center space-x-2">
+                <span class="text-xs font-black text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                  🔀 ${ev.sources.length} FUENTES CONCURRENTES
+                </span>
+                <span class="text-xs font-bold text-slate-700">📍 ${ev.region}</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                ${romeBadge}
+              </div>
+            </div>
+
+            <h4 class="text-sm font-bold text-slate-900 leading-snug">${ev.headline}</h4>
+
+            <div class="flex flex-wrap items-center gap-1.5 pt-1">
+              <span class="text-[11px] font-bold text-slate-500">Actores:</span>
+              ${actorsBadges}
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-lg p-3 space-y-2 mt-2">
+              <div class="flex items-center justify-between text-[11px] font-bold text-slate-700 border-b border-slate-100 pb-1.5">
+                <span>Cronología y Fuentes:</span>
+                <span class="text-[10px] text-emerald-600 font-semibold">1ª alerta: ${ev.sources[0].sourceName}</span>
+              </div>
+              <div class="space-y-1.5 text-xs">
+                ${ev.sources.map((s, idx) => `
+                  <div class="flex items-start justify-between gap-2 p-1.5 rounded hover:bg-slate-50 transition-colors">
+                    <div class="space-y-0.5">
+                      <div class="flex items-center space-x-1.5">
+                        <span class="font-bold text-slate-800">${s.sourceName}</span>
+                        <span class="text-[10px] text-slate-400">(${s.sourceType})</span>
+                        ${idx === 0 ? '<span class="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded">PRIMICIA</span>' : ''}
+                      </div>
+                      <p class="text-[11px] text-slate-600">"${s.title}"</p>
+                    </div>
+                    <a href="${s.sourceUrl}" target="_blank" class="text-blue-600 hover:underline text-[11px] font-semibold shrink-0">
+                      Abrir enlace ↗
+                    </a>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function descargarDatasetCsv() {
+      let csvContent = "\uFEFFID,Titular,Region,Categoria,Tipificacion_DDHH_Estatuto_Roma,Actores_Involucrados,Total_Fuentes,Detalle_Fuentes,Fecha_Primer_Reporte\r\n";
+      multiSourceEventsData.forEach(ev => {
+        const actors = ev.actors.map(a => a.name).join('; ');
+        const sources = ev.sources.map(s => `${s.sourceName} (${s.sourceType})`).join(' | ');
+        const row = [
+          `"${ev.clusterId}"`,
+          `"${ev.headline.replace(/"/g, '""')}"`,
+          `"${ev.region}"`,
+          `"${ev.category}"`,
+          `"${ev.romeStatuteLabel}"`,
+          `"${actors}"`,
+          ev.sources.length,
+          `"${sources}"`,
+          `"${ev.firstReportedAt}"`
+        ];
+        csvContent += row.join(',') + "\r\n";
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", "reporte_ddhh_venezuela.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // ==========================================
+    // FACT-CHECKING Y DESMENTIDOS
+    // ==========================================
+    function filtrarFactChecks() {
+      const q = (document.getElementById('factcheck-search')?.value || '').toLowerCase().trim();
+      const verdict = document.getElementById('factcheck-verdict-filter')?.value || 'ALL';
+
+      const filtered = factChecksData.filter(fc => {
+        if (verdict !== 'ALL' && fc.verdict !== verdict) return false;
+        if (q) {
+          const text = (fc.claim + ' ' + fc.explanation + ' ' + fc.factCheckerSource).toLowerCase();
+          if (!text.includes(q)) return false;
+        }
+        return true;
+      });
+
+      const container = document.getElementById('factcheck-list-container');
+      if (!container) return;
+
+      container.innerHTML = filtered.map(fc => {
+        let badgeClass = 'verdict-sinevidencia';
+        let badgeIcon = '⚪';
+        if (fc.verdict === 'FALSO') { badgeClass = 'verdict-falso'; badgeIcon = '🔴'; }
+        else if (fc.verdict === 'ENGANOSO') { badgeClass = 'verdict-enganoso'; badgeIcon = '🟡'; }
+        else if (fc.verdict === 'MANIPULADO') { badgeClass = 'verdict-manipulado'; badgeIcon = '🟠'; }
+
+        return `
+          <div class="bg-white rounded-xl border border-slate-200 p-4 space-y-2.5 shadow-xs">
+            <div class="flex items-center justify-between text-xs">
+              <span class="px-2.5 py-0.5 rounded-full font-bold text-[11px] ${badgeClass}">
+                ${badgeIcon} ${fc.verdict}
+              </span>
+              <span class="text-slate-400 text-[10px]">Desmentido por: <strong class="text-slate-600">${fc.factCheckerSource}</strong></span>
+            </div>
+            <h4 class="text-xs md:text-sm font-bold text-slate-900 leading-snug">
+              "${fc.claim}"
+            </h4>
+            <p class="text-xs text-slate-600 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+              ${fc.explanation}
+            </p>
+            <div class="flex justify-end pt-1">
+              <a href="${fc.sourceUrl}" target="_blank" class="text-xs text-blue-600 hover:underline font-semibold">
+                Ver investigación completa en ${fc.factCheckerSource} ↗
+              </a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function abrirModalNuevoFactCheck() {
+      if (currentRole !== 'VERIFIED' && currentRole !== 'ADMIN') {
+        alert('Se requiere acreditación como Periodista Verificado o Administrador para registrar desmentidos en el Radar.');
+        showTab('acceso');
+        return;
+      }
+      document.getElementById('factcheck-modal').classList.remove('hidden');
+    }
+
+    function cerrarModalNuevoFactCheck() {
+      document.getElementById('factcheck-modal').classList.add('hidden');
+    }
+
+    function guardarNuevoFactCheck(e) {
+      e.preventDefault();
+      const claim = document.getElementById('fc-claim').value.trim();
+      const verdict = document.getElementById('fc-verdict').value;
+      const factCheckerSource = document.getElementById('fc-source').value.trim();
+      const explanation = document.getElementById('fc-explanation').value.trim();
+      const sourceUrl = document.getElementById('fc-url').value.trim() || 'https://venezuelaverifica.org';
+
+      factChecksData.unshift({
+        id: 'fc_' + Date.now(),
+        claim,
+        verdict,
+        explanation,
+        factCheckerSource,
+        sourceUrl,
+        debunkedAt: new Date().toISOString()
+      });
+
+      cerrarModalNuevoFactCheck();
+      filtrarFactChecks();
+      alert('¡Desmentido registrado con éxito en el Radar!');
+      e.target.reset();
+    }
+
+    function filtrarAlertas() {
+      const q = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+      const region = document.getElementById('filter-region')?.value || 'ALL';
+      const cat = document.getElementById('filter-category')?.value || 'ALL';
+
+      const resultsContainer = document.getElementById('search-results');
+      if (!resultsContainer) return;
+
+      const filtered = feedNews.filter(n => {
+        if (region !== 'ALL' && n.region !== region) return false;
+        if (cat !== 'ALL' && n.category !== cat) return false;
+        if (q) {
+          const text = (n.title + ' ' + n.snippet + ' ' + n.sourceName).toLowerCase();
+          if (!text.includes(q)) return false;
+        }
+        return true;
+      });
+
+      resultsContainer.innerHTML = filtered.map(item => `
+        <div class="bg-white rounded-xl border border-slate-200 p-3.5 space-y-1 shadow-xs">
+          <div class="flex justify-between text-xs text-slate-400">
+            <span class="font-bold text-slate-700">${item.sourceName}</span>
+            <span>📍 ${item.region} • ${item.category}</span>
+          </div>
+          <h4 class="text-xs font-bold text-slate-900">${item.title}</h4>
+          <p class="text-[11px] text-slate-600">${item.snippet}</p>
+        </div>
+      `).join('');
+    }
+
+    // Detección de conectividad
+    window.addEventListener('offline', () => {
+      document.getElementById('network-banner').classList.remove('hidden');
+    });
+
+    window.addEventListener('online', () => {
+      document.getElementById('network-banner').classList.add('hidden');
+    });
+
+
+    // Sincronización automática de noticias remotas desde /data/news.json o feeds RSS
+    async function sincronizarNoticiasEnVivo() {
+      const bannerStatus = document.getElementById('live-feed-counter');
+      try {
+        const res = await fetch('/data/news.json', { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.news) && data.news.length > 0) {
+            let nuevos = 0;
+            data.news.forEach(item => {
+              if (!feedNews.some(existing => existing.title === item.title || existing.sourceUrl === item.sourceUrl)) {
+                feedNews.unshift(item);
+                nuevos++;
+              }
+            });
+            if (nuevos > 0) {
+              renderLiveScrollFeed();
+              console.log(`[VzlaMonitoreo] Se incorporaron ${nuevos} noticias frescas desde el servidor.`);
+            }
+          }
+        }
+      } catch (err) {
+        // En modo local o sin archivo estático, opera con la base en memoria y caché
+      }
+    }
+
+    // Comprobar noticias remotas cada 2 minutos automáticamente
+    setInterval(sincronizarNoticiasEnVivo, 120000);
+
+    // Inicializar
+    sincronizarNoticiasEnVivo();
+    updateRoleUI();
+    renderLiveScrollFeed();
+    updateMapDetailsPanel('Caracas');
+    filtrarEventosMultiFuente();
+    filtrarFactChecks();
+    renderizarSolicitudesAcreditacion();
+    renderizarCodigosInvitacion();
+  </script>
+</body>
+</html>
